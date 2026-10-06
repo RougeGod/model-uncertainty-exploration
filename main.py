@@ -24,6 +24,7 @@ from model_env import ModelEnvironment, reset_weights
 from models import make_batched_model, make_batched_rngs, make_batched_train_model
 from offline_data import AREA_INDEX, load_offline_transitions
 from plant_env import PlantEnv, PlantEnvParams
+from noisy_envs import make_noisy_mountain_car
 from ppo import (
     make_batched_train,
     make_batched_train_state,
@@ -129,11 +130,15 @@ def main():
 
     else:
         is_brax = args.env in BRAX_ENVS
+        is_noisy_mc = args.env == "NoisyMC-v0"
         if is_brax:
             backend = BRAX_BACKENDS.get(args.env, "positional")
             base_env = BraxGymnaxWrapper(args.env, backend=backend)
             env_params = base_env.default_params
-        else:
+        elif is_noisy_mc:
+            base_env = make_noisy_mountain_car()
+            env_params = base_env.default_params.replace(max_steps_in_episode=999)
+        else:  
             base_env, env_params = gymnax.make(args.env)
 
         if is_brax:
@@ -177,33 +182,22 @@ def main():
         in_features = obs_dim + action_dim
         out_features = obs_dim + 2 if predict_reward_terminated else obs_dim
 
-        # Real-env steps collected between model+PPO re-plans. Default: one
-        # full episode. Set to 1 to re-plan after every real step.
-        rollout_steps = (
-            args.steps_per_rollout
-            if args.steps_per_rollout is not None
-            else env_params.max_steps_in_episode
-        )
+        rollout_steps = env_params.max_steps_in_episode # // 10
         num_steps = 10
-        # Keep the model minibatch tied to episode length so shrinking
-        # steps_per_rollout (e.g. plan-every-step) does not collapse it to 1.
-        model_minibatch_size = env_params.max_steps_in_episode
-        if args.num_rollouts is not None:
-            num_rollouts = args.num_rollouts
-            total_timesteps = num_rollouts * rollout_steps
-        else:
-            # Floor of the episode count: aim for roughly max_steps env-steps of
-            # data, but this is NOT a step-count guarantee. Integer division
-            # never rounds up and the max(1, ...) floor means a single episode
-            # for envs with max_steps_in_episode in the upper half of the range.
-            max_steps = 100_000 if is_brax else 1000
-            num_episodes = max(1, max_steps // env_params.max_steps_in_episode)
-            total_timesteps = env_params.max_steps_in_episode * num_episodes
-            num_rollouts = int(total_timesteps // rollout_steps)
+        model_minibatch_size = rollout_steps
+        # Floor of the episode count: aim for roughly max_steps env-steps of data,
+        # but this is NOT a step-count guarantee. Integer division never rounds up
+        # and the max(1, ...) floor means a single episode for envs with
+        # max_steps_in_episode in the upper half of the range.
+        max_steps = 100_000 if is_brax else 1000
+        num_episodes = max(1, max_steps // env_params.max_steps_in_episode)
+        total_timesteps = env_params.max_steps_in_episode * num_episodes
         # Cap the rolling dataset buffer; the RBF feature bank places one center
         # per stored datapoint, so NUM_FEATURES (rbf) is derived from this same
         # value (see model_config_dict) to keep the two in lockstep.
         dataset_size = min(10000, total_timesteps)
+
+        num_rollouts = args.num_rollouts or int(total_timesteps // rollout_steps)
         log_prefix = env_name
         hparams_run = {
             "num_rollouts": num_rollouts,
