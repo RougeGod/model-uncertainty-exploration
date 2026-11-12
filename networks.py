@@ -55,7 +55,7 @@ class MLP(nnx.Module):
             ]
         )
         self.out = nnx.Linear(
-            hidden_features, out_features, kernel_init=out_kernel_init, rngs=rngs
+            sizes[-1], out_features, kernel_init=out_kernel_init, rngs=rngs
         )
 
     def __call__(self, x, rngs: nnx.Rngs | None = None):
@@ -73,6 +73,7 @@ class Actor(nnx.Module):
         activation: str = "tanh",
         discrete: bool = False,
         use_layer_norm: bool = False,
+        num_layers: int = 2,
         *,
         rngs: nnx.Rngs,
     ):
@@ -82,7 +83,7 @@ class Actor(nnx.Module):
             hidden_dim,
             action_dim,
             rngs=rngs,
-            num_layers=2,
+            num_layers=num_layers,
             activation=activation,
             use_layer_norm=use_layer_norm,
             kernel_init=orthogonal(np.sqrt(2)),
@@ -107,6 +108,7 @@ class Critic(nnx.Module):
         hidden_dim: int,
         activation: str = "tanh",
         use_layer_norm: bool = False,
+        num_layers: int = 2,
         *,
         rngs: nnx.Rngs,
     ):
@@ -115,7 +117,7 @@ class Critic(nnx.Module):
             hidden_dim,
             1,
             rngs=rngs,
-            num_layers=2,
+            num_layers=num_layers,
             activation=activation,
             use_layer_norm=use_layer_norm,
             kernel_init=orthogonal(np.sqrt(2)),
@@ -137,6 +139,7 @@ class ActorCritic(nnx.Module):
         discrete: bool = False,
         use_layer_norm: bool = False,
         preprocess_obs_fn: Callable[[jax.Array], jax.Array] | None = None,
+        num_layers: int = 2,
         *,
         rngs: nnx.Rngs,
     ):
@@ -148,10 +151,11 @@ class ActorCritic(nnx.Module):
             activation,
             discrete,
             use_layer_norm,
+            num_layers,
             rngs=rngs,
         )
         self.critic = Critic(
-            state_dim, hidden_dim, activation, use_layer_norm, rngs=rngs
+            state_dim, hidden_dim, activation, use_layer_norm, num_layers, rngs=rngs
         )
 
     def __call__(self, x):

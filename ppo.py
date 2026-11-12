@@ -308,6 +308,7 @@ def make_train_state(config, env, env_params, rngs):
         discrete=discrete,
         use_layer_norm=config["USE_LAYER_NORM"],
         preprocess_obs_fn=preprocess_obs_fn,
+        num_layers=config["NUM_LAYERS"],
         rngs=rngs,
     )
 
