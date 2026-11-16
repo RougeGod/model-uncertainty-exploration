@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from environments.bsuite.deep_sea import KeyedDeepSea
+from environments.bsuite.deep_sea import DeepSea
 
 SIZE = 5
 SEEDS = jnp.arange(4)
@@ -15,7 +15,7 @@ SEEDS = jnp.arange(4)
 
 @pytest.fixture(scope="module")
 def env():
-    return KeyedDeepSea(SIZE)
+    return DeepSea(SIZE)
 
 
 @pytest.fixture(scope="module")

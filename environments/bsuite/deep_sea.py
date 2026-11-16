@@ -2,7 +2,8 @@ import jax
 import jax.numpy as jnp
 from flax import struct
 from gymnax.environments import spaces
-from gymnax.environments.bsuite.deep_sea import DeepSea, EnvParams
+from gymnax.environments.bsuite.deep_sea import DeepSea as GymnaxDeepSea
+from gymnax.environments.bsuite.deep_sea import EnvParams
 
 
 @struct.dataclass
@@ -12,18 +13,7 @@ class DeepSeaParams(EnvParams):
     )
 
 
-class KeyedDeepSea(DeepSea):
-    """gymnax DeepSea as in the VBE paper: deterministic transitions, a random
-    per-cell action map (which action means "right") fixed per seed, and a
-    tabular observation.
-
-    Upstream draws the action map once in ``__init__``, so it cannot be vmapped
-    over seeds; here it is drawn from ``params.action_mapping_key``. Upstream's
-    observation is a (size, size) grid; here it is the integer index of the
-    reachable cell (row, column), column <= row: ``row * (row + 1) / 2 + column``.
-    As in VBE, the observation after the bottom row is the reset cell 0.
-    """
-
+class DeepSea(GymnaxDeepSea):
     def __init__(self, size: int):
         super().__init__(size)
         rows, cols = jnp.tril_indices(size)
