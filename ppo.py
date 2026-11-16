@@ -299,15 +299,20 @@ def make_train_state(config, env, env_params, rngs):
     discrete = isinstance(action_space, spaces.Discrete)
     action_dim = action_space.n if discrete else action_space.shape[0]
     obs_space = env.observation_space(env_params)
-    obs_classes = obs_space.n if isinstance(obs_space, spaces.Discrete) else None
+    if isinstance(obs_space, spaces.Discrete):
+        state_dim = obs_space.n
+        preprocess_obs_fn = functools.partial(jax.nn.one_hot, num_classes=obs_space.n)
+    else:
+        state_dim = obs_space.shape[0]
+        preprocess_obs_fn = None
     network = ActorCritic(
-        obs_space.shape[0] if obs_classes is None else obs_classes,
+        state_dim,
         action_dim,
         config["HIDDEN_DIM"],
         activation=config["ACTIVATION"],
         discrete=discrete,
         use_layer_norm=config["USE_LAYER_NORM"],
-        obs_classes=obs_classes,
+        preprocess_obs_fn=preprocess_obs_fn,
         rngs=rngs,
     )
 

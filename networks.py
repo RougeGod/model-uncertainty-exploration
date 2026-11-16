@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from itertools import pairwise
 
 import distrax
@@ -135,12 +136,11 @@ class ActorCritic(nnx.Module):
         activation: str = "tanh",
         discrete: bool = False,
         use_layer_norm: bool = False,
-        obs_classes: int | None = None,
+        preprocess_obs_fn: Callable[[jax.Array], jax.Array] | None = None,
         *,
         rngs: nnx.Rngs,
     ):
-        # Discrete observations arrive as class indices and are one-hot encoded.
-        self.obs_classes = obs_classes
+        self.preprocess_obs_fn = preprocess_obs_fn
         self.actor = Actor(
             state_dim,
             action_dim,
@@ -155,8 +155,8 @@ class ActorCritic(nnx.Module):
         )
 
     def __call__(self, x):
-        if self.obs_classes is not None:
-            x = jax.nn.one_hot(x, self.obs_classes)
+        if self.preprocess_obs_fn is not None:
+            x = self.preprocess_obs_fn(x)
         pi = self.actor(x)
         critic = self.critic(x)
         return pi, critic
