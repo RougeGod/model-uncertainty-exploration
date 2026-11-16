@@ -1,8 +1,8 @@
 import os
 
+import pytest
 
-def pytest_configure(config):
-    # JAX picks its platform when first imported, so it is chosen from the
-    # environment, not in code. The default run (-m 'not gpu') needs CPU.
+
+def pytest_configure(config: pytest.Config):
     if "not gpu" in (config.option.markexpr or ""):
         os.environ.setdefault("JAX_PLATFORMS", "cpu")
