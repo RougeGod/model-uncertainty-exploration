@@ -30,8 +30,7 @@ TINY_PPO = PPOConfig(
 TINY_ENN = ENNConfig(update_steps=10, hidden_dim=16)
 TINY_BLR = BLRConfig(num_samples=4)
 
-# Cases run on the GPU (``-m gpu``); the rest run on CPU, selected by the caller
-# through ``JAX_PLATFORMS`` (see conftest.py).
+
 GPU_CASES = {"pendulum-every-tenth"}
 
 CASES = {
