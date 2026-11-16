@@ -229,9 +229,7 @@ class ModelBasedAgent:
         )
         # model varies per seed (B axis); alpha/beta vary per config (C axis).
         params = self.model_env.default_params.replace(
-            env_params=self.model_env.seed_env_params
-            if self.model_env.seed_env_params is not None
-            else self.model_env.default_params.env_params,
+            env_params=self.model_env.seed_env_params,
             model=agent_state.models,
             rnd=agent_state.rnd,
             alpha=self.alphas,

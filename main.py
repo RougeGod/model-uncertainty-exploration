@@ -385,13 +385,17 @@ def main(args: Args):
         model_env = ModelEnvironment(
             env,
             env_params,
+            seed_env_params
+            if env_params_axis == 0
+            else jax.tree.map(
+                lambda x: jnp.broadcast_to(x, (B, *jnp.shape(x))), env_params
+            ),
             prediction_mode=args.model_env_mode,
             explore_bonus=args.explore_bonus,
             oracle_reward_terminated=oracle_reward_terminated,
             reset_source=reset_source,
             max_steps_in_episode=args.rollout_length,
             uncertainty_threshold=args.uncertainty_threshold,
-            seed_env_params=seed_env_params if env_params_axis == 0 else None,
         )
         agent = ModelBasedAgent(
             model_name=args.model.name,
