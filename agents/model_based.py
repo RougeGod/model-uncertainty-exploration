@@ -224,12 +224,11 @@ class ModelBasedAgent:
         train_states = make_batched_train_state(
             self.ppo_config,
             self.model_env,
-            self.model_env.default_params,
+            self.model_env.default_params.unbatched(),
             vsplit(ts_seed, num_configs).T,  # (B, C)
         )
         # model varies per seed (B axis); alpha/beta vary per config (C axis).
         params = self.model_env.default_params.replace(
-            env_params=self.model_env.seed_env_params,
             model=agent_state.models,
             rnd=agent_state.rnd,
             alpha=self.alphas,

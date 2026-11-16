@@ -50,9 +50,17 @@ class ModelEnvState(environment.EnvState):
     last_action: jnp.ndarray
 
 
+def unbatch_env_params(env_params: environment.EnvParams) -> environment.EnvParams:
+    """One seed's env params from a per-seed stack (leading axis B).
+
+    Spaces and shapes do not vary across seeds, so any slice serves static queries
+    made outside a per-seed vmap."""
+    return jax.tree.map(lambda x: x[0], env_params)
+
+
 @struct.dataclass
 class ModelEnvParams:
-    env_params: environment.EnvParams
+    env_params: environment.EnvParams  # per-seed stack, leading axis B
     max_steps_in_episode: int = struct.field(pytree_node=False)
     model: WorldModel | None = None
     rnd: RND | None = None  # per-seed RND bonus (explore_bonus="rnd")
@@ -60,6 +68,11 @@ class ModelEnvParams:
     beta: float = 0.0
     init_obs: jnp.ndarray | None = None  # per-seed replay buffer obs, (N, obs_dim)
     init_weights: jnp.ndarray | None = None  # per-seed reset sampling weights, (N,)
+
+    def unbatched(self) -> "ModelEnvParams":
+        """Copy whose ``env_params`` is a single seed's, for use outside the
+        per-seed vmap (space/shape queries, single-model rollouts)."""
+        return self.replace(env_params=unbatch_env_params(self.env_params))
 
     def seed_vmap_axes(self) -> "ModelEnvParams":
         """vmap ``in_axes`` prefix that maps the per-seed ``env_params``, ``model``
@@ -94,7 +107,6 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
         self,
         env: environment.Environment,
         env_params: environment.EnvParams,
-        seed_env_params: environment.EnvParams,
         samples: int = 10,
         prediction_mode: Literal["mean", "sample"] = "mean",
         explore_bonus: Literal["std", "eig", "rnd"] = "std",
@@ -116,7 +128,9 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
                 f"reset_source must be 'env', 'buffer' or 'init', got {reset_source!r}"
             )
         self._real_env = env
-        self._real_env_params = env_params
+        # Per-seed stack, leading axis B (see ``ModelEnvParams.env_params``).
+        self.env_params = env_params
+        single_env_params = unbatch_env_params(env_params)
         self.samples = samples
         self.prediction_mode = prediction_mode
         self.explore_bonus = explore_bonus
@@ -124,19 +138,18 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
         self.reset_source = reset_source
         self._max_steps_override = max_steps_in_episode
         self.uncertainty_threshold = uncertainty_threshold
-        self.seed_env_params = seed_env_params
         self._zero_action = jnp.zeros_like(
-            env.action_space(env_params).sample(jax.random.key(0))
+            env.action_space(single_env_params).sample(jax.random.key(0))
         )
 
     @property
     def default_params(self) -> ModelEnvParams:
         return ModelEnvParams(
-            env_params=self._real_env_params,
+            env_params=self.env_params,
             max_steps_in_episode=(
                 self._max_steps_override
                 if self._max_steps_override is not None
-                else self._real_env_params.max_steps_in_episode
+                else int(unbatch_env_params(self.env_params).max_steps_in_episode)
             ),
         )
 

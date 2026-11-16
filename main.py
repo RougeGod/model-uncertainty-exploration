@@ -19,7 +19,7 @@ from batching import seed_slice, vsplit
 from config import Args, model_config_dict, ppo_config_dict
 from data import collate_rollout
 from environments import BRAX_BACKENDS, BRAX_ENVS, make_state_reconstruction_wrapper
-from environments.bsuite.deep_sea import KeyedDeepSea
+from environments.bsuite.deep_sea import DeepSea
 from logger import ExperimentLogger, log_eval, log_time
 from model_env import ModelEnvironment
 from offline_data import AREA_INDEX, load_offline_transitions
@@ -244,7 +244,7 @@ def main(args: Args):
             base_env = BraxGymnaxWrapper(args.env, backend=backend)
             env_params = base_env.default_params
         elif args.env.startswith("DeepSea-"):
-            base_env = KeyedDeepSea(int(args.env.split("-")[1]))
+            base_env = DeepSea(int(args.env.split("-")[1]))
             env_params = base_env.default_params
         else:
             base_env, env_params = gymnax.make(args.env)
@@ -388,7 +388,6 @@ def main(args: Args):
         )
         model_env = ModelEnvironment(
             env,
-            env_params,
             seed_env_params
             if env_params_axis == 0
             else jax.tree.map(
