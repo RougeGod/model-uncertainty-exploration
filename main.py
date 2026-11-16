@@ -24,7 +24,7 @@ from logger import ExperimentLogger, log_eval, log_time
 from model_env import ModelEnvironment
 from offline_data import AREA_INDEX, load_offline_transitions
 from plant_env import PlantEnv, PlantEnvParams
-from ppo import make_rollout, normalizes_obs
+from ppo import make_rollout
 from wrappers import (
     BraxGymnaxWrapper,
     ClipAction,
@@ -61,7 +61,7 @@ def run_online(
     )
     agent_state = agent.init(init_key)
 
-    if agent.on_policy and normalizes_obs(rollout_config, env, env_params):
+    if agent.on_policy and rollout_config["NORMALIZE_OBS"]:
 
         @nnx.jit
         @nnx.vmap
@@ -323,7 +323,11 @@ def main(args: Args):
         args.model, max_data=dataset_size, minibatch_size=model_minibatch_size
     )
     config = ppo_config_dict(
-        args.ppo, env_name=args.env, seed=args.seed, offline=args.offline
+        args.ppo,
+        env_name=args.env,
+        seed=args.seed,
+        offline=args.offline,
+        discrete_obs=discrete_obs,
     )
 
     hparams_extra = {}

@@ -26,15 +26,10 @@ class Transition(NamedTuple):
     raw_reward: jnp.ndarray
 
 
-def normalizes_obs(config, env, env_params):
-    """Observation normalization is meaningless for Discrete (index) observations."""
-    discrete_obs = isinstance(env.observation_space(env_params), spaces.Discrete)
-    return config["NORMALIZE_ENV"] and not discrete_obs
-
-
 def make_rollout(config, env, env_params, training=True):
-    discrete = isinstance(env.action_space(env_params), spaces.Discrete)
-    normalize_obs = normalizes_obs(config, env, env_params)
+    discrete_action = isinstance(env.action_space(env_params), spaces.Discrete)
+    normalize_obs = config["NORMALIZE_OBS"]
+    normalize_reward = config["NORMALIZE_REWARD"]
 
     def _rollout(runner_state):
         # COLLECT TRAJECTORIES
@@ -67,14 +62,14 @@ def make_rollout(config, env, env_params, training=True):
                     normalize_vec_obs(obsv)
                 normalize_vec_obs.eval()
                 next_obs = normalize_vec_obs(next_obs)
-            if config["NORMALIZE_ENV"] and training:
+            if normalize_reward and training:
                 normalize_vec_reward.train()
                 reward = normalize_vec_reward(reward, terminated, truncated)
 
             _, next_value = network(next_obs)
 
             env_action = action
-            if not discrete:
+            if not discrete_action:
                 env_action = jnp.clip(
                     action,
                     env.action_space(env_params).low,
@@ -239,7 +234,7 @@ def make_train(env, config):
         reset_rng = jax.random.split(_rng, config["NUM_ENVS"])
         obsv, env_state = env.reset(reset_rng, env_params)
 
-        if normalizes_obs(config, env, env_params):
+        if config["NORMALIZE_OBS"]:
             normalize_vec_obs.train()
             normalize_vec_obs(obsv)
 
