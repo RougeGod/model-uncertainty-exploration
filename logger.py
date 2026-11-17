@@ -47,11 +47,10 @@ class ExperimentLogger:
         rewards = np.asarray(batch.reward)
 
         if self._discrete_obs:
-            states = obs if obs.ndim == 1 else obs.argmax(axis=1)
-            self._log_time_series("dataset/state", states, start_step)
-            self._visited.update(states.tolist())
+            self._log_time_series("dataset/state", obs, start_step)
+            self._visited.update(obs.tolist())
             self._writer.add_scalar(
-                "coverage/unique_states", len(self._visited), start_step + len(states)
+                "coverage/unique_states", len(self._visited), start_step + len(obs)
             )
         else:
             for i in range(obs.shape[1]):
