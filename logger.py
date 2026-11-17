@@ -48,10 +48,15 @@ class ExperimentLogger:
 
         if self._discrete_obs:
             self._log_time_series("dataset/state", obs, start_step)
-            self._visited.update(obs.tolist())
-            self._writer.add_scalar(
-                "coverage/unique_states", len(self._visited), start_step + len(obs)
+            is_new = np.zeros(len(obs), dtype=bool)
+            is_new[np.unique(obs, return_index=True)[1]] = True
+            is_new &= ~np.isin(obs, list(self._visited))
+            self._log_time_series(
+                "coverage/unique_states",
+                len(self._visited) + np.cumsum(is_new),
+                start_step,
             )
+            self._visited.update(obs.tolist())
         else:
             for i in range(obs.shape[1]):
                 self._log_time_series(f"dataset/obs_{i}", obs[:, i], start_step)
