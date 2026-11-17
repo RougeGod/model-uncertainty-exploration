@@ -30,7 +30,7 @@ class ENNModel(WorldModel):
         act_dim: int | None = None,
         eps: float = 1e-8,
         predict_reward_terminated: bool = True,
-        head: str = "deterministic",
+        head: Literal["deterministic", "gaussian"] = "deterministic",
         bootstrap: Literal["none", "bernoulli", "gaussian"] = "none",
         bootstrap_noise: float = 1.0,
         l2: float = 0.0,
@@ -127,6 +127,8 @@ class ENNModel(WorldModel):
         return self.normalize_delta_obs(next_obs - obs)
 
     def nll(self, x, obs, next_obs):
+        """Joint NLL of the normalized delta-obs under the base network's predictive
+        distribution (epinet and index excluded). Zero for the deterministic head."""
         if self.head == "deterministic":
             return super().nll(x, obs, next_obs)
         y, _ = self.enn.base(x)
@@ -330,7 +332,7 @@ def _make_batched_model(
     act_dim,
     keys,
     predict_reward_terminated: bool = True,
-    head: str = "deterministic",
+    head: Literal["deterministic", "gaussian"] = "deterministic",
 ):
     @nnx.vmap
     def build(key):
