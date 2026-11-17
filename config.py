@@ -64,10 +64,12 @@ class PPOConfig:
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     hidden_dim: int = 64
+    num_layers: int = 2
     activation: str = "tanh"
     use_layer_norm: bool = False
     anneal_lr: bool = False
-    normalize_env: bool = True
+    normalize_obs: bool = True
+    normalize_reward: bool = True
     debug: bool = False
 
 
@@ -177,8 +179,7 @@ def ppo_config_dict(
 
     Computes derived keys NUM_UPDATES and MINIBATCH_SIZE from the tunable base
     keys so that overriding e.g. --ppo.num-envs automatically re-derives them.
-    Also derives NORMALIZE_OBS / NORMALIZE_REWARD from ``normalize_env``;
-    observation normalization is meaningless for Discrete (index) observations.
+    Observation normalization is disabled for Discrete (index) observations.
     """
     d: dict = {k.upper(): v for k, v in dataclasses.asdict(p).items()}
     if not offline:
@@ -186,6 +187,5 @@ def ppo_config_dict(
     d["SEED"] = seed
     d["NUM_UPDATES"] = int(d["TOTAL_TIMESTEPS"]) // d["NUM_STEPS"] // d["NUM_ENVS"]
     d["MINIBATCH_SIZE"] = d["NUM_ENVS"] * d["NUM_STEPS"] // d["NUM_MINIBATCHES"]
-    d["NORMALIZE_OBS"] = d["NORMALIZE_ENV"] and not discrete_obs
-    d["NORMALIZE_REWARD"] = d["NORMALIZE_ENV"]
+    d["NORMALIZE_OBS"] = d["NORMALIZE_OBS"] and not discrete_obs
     return d
