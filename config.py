@@ -27,7 +27,7 @@ class ENNConfig:
     l2: float | tuple[float, ...] = 0.1
     update_steps: int | tuple[int, ...] = 10000
     use_layer_norm: bool = False
-    head: Literal["deterministic", "gaussian"] = "deterministic"
+    head: Literal["deterministic", "gaussian", "categorical"] = "deterministic"
     min_scale: float = 1e-3
     beta_nll: float = 0.5
     bootstrap: Literal["none", "bernoulli", "gaussian"] = "none"
@@ -125,6 +125,13 @@ class Args:
             raise ValueError("--model-free needs an online env")
         if self.model_free and self.explore_bonus == "rnd":
             raise ValueError("--explore-bonus rnd is a model-env bonus")
+        if getattr(self.model, "head", None) == "categorical":
+            if self.offline:
+                raise ValueError(
+                    "--model.head categorical needs an online Discrete env"
+                )
+            if self.explore_bonus == "rnd":
+                raise ValueError("--explore-bonus rnd does not support Discrete obs")
 
 
 def candidate_configs(m):

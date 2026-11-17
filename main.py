@@ -270,12 +270,17 @@ def main(args: Args):
         act_dim = action_space.n if discrete else None
         obs_space = base_env.observation_space(single_env_params)
         discrete_obs = isinstance(obs_space, spaces.Discrete)
-        if discrete_obs and not args.model_free:
-            raise ValueError(
-                f"{args.env} has Discrete observations; model-based agents need "
-                "a model and ModelEnvironment that handle them (categorical head). "
-                "Use --model-free."
-            )
+        head = getattr(args.model, "head", "deterministic")
+        if not args.model_free:
+            if discrete_obs and head != "categorical":
+                raise ValueError(
+                    f"{args.env} has Discrete observations; model-based agents "
+                    "need --model.head categorical (or use --model-free)."
+                )
+            if head == "categorical" and not discrete_obs:
+                raise ValueError(
+                    "--model.head categorical needs a Discrete observation space"
+                )
         env = _wrap_env(base_env, discrete)
 
         if is_brax:
@@ -291,7 +296,6 @@ def main(args: Args):
 
         obs_dim = obs_space.n if discrete_obs else obs_space.shape[0]
         in_features = obs_dim + action_dim
-        head = getattr(args.model, "head", "deterministic")
         out_features = head_out_features(head, obs_dim, predict_reward_terminated)
 
         # Real-env steps between re-plans: one episode by default, 1 to re-plan

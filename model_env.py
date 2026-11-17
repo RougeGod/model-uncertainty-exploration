@@ -200,15 +200,14 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
     ) -> tuple[jax.Array, ModelEnvState, jax.Array, jax.Array, dict[Any, Any]]:
         model = params.model
         x = model.single_input(state.obs, action)
-        if self.prediction_mode == "mean":
-            y = model.predict_mean(x)
-            delta_norm = y[..., : model.obs_dim]
-        else:
-            # Epistemic index fixed per episode; distributional models also draw
-            # aleatoric noise from their predictive distribution here.
+        mean = self.prediction_mode == "mean"
+        # Epistemic index fixed per episode; distributional models also draw
+        # aleatoric noise from their predictive distribution here.
+        key_sample = key
+        if not mean:
             key, key_sample = jax.random.split(key)
-            y = model.predict_sample(x, state.z[0])
-            delta_norm = model.sample_delta(x, state.z[0], key_sample)
+        y = model.predict_mean(x) if mean else model.predict_sample(x, state.z[0])
+        obs = model.predict_next_obs(x, state.obs, state.z[0], key_sample, mean)
         # NOTE: the "eig" and "std" bonuses are on different scales and are NOT
         # magnitude-matched. "std" is the posterior standard deviation (linear,
         # in normalized output units) while "eig" is ½ log(1 + σ²_ep) nats
@@ -218,13 +217,9 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
         if self.explore_bonus != "rnd":
             r_intrinsic = model.uncertainty(x, state.z, self.explore_bonus)
 
-        delta_obs = model.denormalize_delta_obs(delta_norm)
-        obs = state.obs + delta_obs
-        obs = jnp.clip(
-            obs,
-            self._real_env.observation_space(params.env_params).low,
-            self._real_env.observation_space(params.env_params).high,
-        )
+        obs_space = self._real_env.observation_space(params.env_params)
+        if isinstance(obs_space, spaces.Box):
+            obs = jnp.clip(obs, obs_space.low, obs_space.high)
         if self.explore_bonus == "rnd":
             # Novelty of the predicted next observation.
             r_intrinsic = params.rnd(obs)

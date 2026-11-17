@@ -10,6 +10,7 @@ def head_out_features(head: str, obs_dim: int, predict_reward_terminated: bool) 
 
     deterministic: delta_obs (+ reward, terminated logits).
     gaussian: [loc | raw_scale] of the normalized delta_obs, per obs dim.
+    categorical: one logit per next state (obs_dim = number of Discrete states).
     """
     if head == "deterministic":
         return obs_dim + 2 if predict_reward_terminated else obs_dim
@@ -20,6 +21,8 @@ def head_out_features(head: str, obs_dim: int, predict_reward_terminated: bool) 
         )
     if head == "gaussian":
         return 2 * obs_dim
+    if head == "categorical":
+        return obs_dim
     raise ValueError(f"unknown head {head!r}")
 
 
@@ -66,6 +69,19 @@ class WorldModel(nnx.Module):
         distributional models override this to sample their predictive distribution.
         """
         return self.predict_sample(x, index)[..., : self.obs_dim]
+
+    def predict_next_obs(self, x, obs, index, key, mean: bool):
+        """Next observation at a single input, in the env's observation convention.
+
+        ``mean`` uses the deterministic posterior mean; otherwise the epistemic
+        index ``index`` is fixed and ``key`` drives any aleatoric sampling.
+        Continuous models add the denormalized predicted delta to ``obs``.
+        """
+        if mean:
+            delta_norm = self.predict_mean(x)[..., : self.obs_dim]
+        else:
+            delta_norm = self.sample_delta(x, index, key)
+        return obs + self.denormalize_delta_obs(delta_norm)
 
     def nll(self, x, obs, next_obs):
         """Negative log-likelihood of ``next_obs`` under the mean predictive

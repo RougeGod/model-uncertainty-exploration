@@ -17,7 +17,8 @@ class ENNModel(WorldModel):
     ``head`` selects the output:
       deterministic: point estimate of the normalized delta-obs (+ reward/terminated).
       gaussian: diagonal Gaussian over the normalized delta-obs (aleatoric noise).
-    For the distributional head each epistemic index z yields a full predictive
+      categorical: distribution over the next state (Discrete obs, one-hot encoded).
+    For the distributional heads each epistemic index z yields a full predictive
     distribution; exploration uses only the disagreement across z (epistemic).
     """
 
@@ -69,14 +70,23 @@ class ENNModel(WorldModel):
     def predict_mean(self, x):
         """Expected normalized delta-obs from the base network for a single input.
 
-        gaussian: the Gaussian loc.
+        gaussian: the Gaussian loc. categorical: the next-state probabilities
+        (there is no delta; see ``predict_next_obs``).
         """
         y, _ = self.enn.base(x)
         if self.head == "gaussian":
             return y[..., : self.obs_dim]
+        if self.head == "categorical":
+            return jax.nn.softmax(y, axis=-1)
         return y
 
-    # --- Distributional head ---
+    # --- Distributional heads ---
+
+    def build_input(self, obs, action):
+        """Categorical: obs holds Discrete state indices; encode them one-hot."""
+        if self.head == "categorical":
+            obs = jax.nn.one_hot(jnp.reshape(obs, (-1,)), self.obs_dim)
+        return super().build_input(obs, action)
 
     def _loc_scale(self, y):
         loc, raw_scale = y[..., : self.obs_dim], y[..., self.obs_dim :]
@@ -86,15 +96,34 @@ class ENNModel(WorldModel):
         """Raw network output → distrax predictive distribution."""
         if self.head == "gaussian":
             return distrax.MultivariateNormalDiag(*self._loc_scale(y))
+        if self.head == "categorical":
+            return distrax.Categorical(logits=y)
         raise ValueError("deterministic head has no predictive distribution")
 
     def sample_delta(self, x, index, key):
         if self.head == "deterministic":
             return super().sample_delta(x, index, key)
+        if self.head == "categorical":
+            raise NotImplementedError(
+                "categorical predicts the next state, not a delta; use predict_next_obs"
+            )
         return self.dist_from_output(self.predict_sample(x, index)).sample(seed=key)
 
+    def predict_next_obs(self, x, obs, index, key, mean: bool):
+        if self.head != "categorical":
+            return super().predict_next_obs(x, obs, index, key, mean)
+        # Discrete obs are state indices: the sampled class, or the mode.
+        if mean:
+            next_obs = jnp.argmax(self.predict_mean(x), axis=-1)
+        else:
+            dist = self.dist_from_output(self.predict_sample(x, index))
+            next_obs = dist.sample(seed=key)
+        return next_obs.astype(obs.dtype)
+
     def _targets(self, obs, next_obs):
-        """Distribution-space targets: the normalized delta-obs."""
+        """Distribution-space targets: next-state class or normalized delta-obs."""
+        if self.head == "categorical":
+            return jnp.reshape(next_obs, (-1,)).astype(jnp.int32)
         return self.normalize_delta_obs(next_obs - obs)
 
     def nll(self, x, obs, next_obs):
@@ -105,18 +134,40 @@ class ENNModel(WorldModel):
         y, _ = self.enn.base(x)
         return -self.dist_from_output(y).log_prob(self._targets(obs, next_obs))
 
+    def update_stats(self, dataset, pointer):
+        if self.head == "categorical":
+            # Obs are state indices, encoded one-hot in build_input. Nothing to
+            # normalize: a per-column std is ~0 for unvisited states and would
+            # blow up the input, deltas are not regressed, and the reward is
+            # the oracle's. The identity stats from __init__ stay in place.
+            return
+        super().update_stats(dataset, pointer)
+
     def uncertainty(self, x, z, kind="std", reduce_output=True):
         """Epistemic-only uncertainty at a single x over S indices z.
 
         Aleatoric noise is excluded: it is the spread *within* each index's
         predictive distribution, while these measure disagreement *across* z.
-          eig: ½ log(1 + Var_z[μ] / E_z[σ²]) per obs dim (Gaussian information
-            gain with the predicted aleatoric noise).
-          std: sqrt(Var_z) of the mean μ.
+          categorical, eig: BALD mutual information H[E_z p] - E_z H[p], split
+            into per-class terms that sum to it.
+          gaussian, eig: ½ log(1 + Var_z[μ] / E_z[σ²]) per obs dim (Gaussian
+            information gain with the predicted aleatoric noise).
+          std: sqrt(Var_z) of the mean parameters (probs or μ).
         """
         if self.head == "deterministic":
             return super().uncertainty(x, z, kind, reduce_output)
-        loc, scale = self._loc_scale(self.predict_samples(x, z))  # (S, obs_dim)
+        y = self.predict_samples(x, z)  # (S, out_features)
+        if self.head == "categorical":
+            p = jax.nn.softmax(y, axis=-1)
+            if kind == "eig":
+                p_bar = p.mean(axis=0)
+                u = -jax.scipy.special.xlogy(p_bar, p_bar) + jax.scipy.special.xlogy(
+                    p, p
+                ).mean(axis=0)
+            else:
+                u = p.std(axis=0)
+            return u.sum(axis=-1) if reduce_output else u
+        loc, scale = self._loc_scale(y)
         if kind == "eig":
             u = 0.5 * jnp.log1p(loc.var(axis=0) / (scale**2).mean(axis=0))
         else:
@@ -155,6 +206,11 @@ def _loss_fn(model: ENNModel, batch, indices, rngs: nnx.Rngs):
 
     def masked_mean(loss):
         return jnp.where(keep.any(), jnp.mean(loss, where=keep), 0.0)
+
+    if model.head == "categorical":
+        target = model._targets(batch.obs, batch.info["final_observation"])
+        nll = masked_mean(-distrax.Categorical(logits=logits).log_prob(target))
+        return nll, (nll, jnp.zeros(()), jnp.zeros(()))
 
     delta_next_state = batch.info["final_observation"] - batch.obs
     delta_next_state = model.normalize_delta_obs(delta_next_state)

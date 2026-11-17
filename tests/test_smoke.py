@@ -101,6 +101,17 @@ CASES = {
         steps_per_rollout=50,
         ppo=TINY_PPO,
     ),
+    "enn-categorical-deepsea-index-obs": Args(
+        env="DeepSea-5",
+        num_seeds=2,
+        max_steps=50,
+        steps_per_rollout=10,
+        explore_bonus="eig",
+        ppo=TINY_PPO,
+        model=ENNConfig(
+            update_steps=10, hidden_dim=16, head="categorical", bootstrap="bernoulli"
+        ),
+    ),
     "model-free-deepsea": Args(
         env="DeepSea-5",
         model_free=True,
