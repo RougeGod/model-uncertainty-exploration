@@ -129,6 +129,7 @@ class ExperimentLogger:
         term_bce,
         term_f1,
         mean_uncertainty,
+        dyn_nll,
         dataset_size,
     ):
         self._writer.add_scalar(
@@ -145,6 +146,9 @@ class ExperimentLogger:
         )
         self._writer.add_scalar(
             "validation/mean_uncertainty", float(mean_uncertainty), int(dataset_size)
+        )
+        self._writer.add_scalar(
+            "validation/dynamics_nll", float(dyn_nll), int(dataset_size)
         )
         self._track_summary_metric("validation/dynamics_mae", dyn_mae)
         self._track_summary_metric("validation/reward_mae", rew_mae)
@@ -171,14 +175,16 @@ def log_validation(
     dataset_ptr,
     val_keys,
 ):
-    dyn_mae, rew_mae, term_bce, term_f1, mean_uncertainty = batched_val_metrics(
-        models,
-        val_obs,
-        val_act,
-        val_true_delta_obs,
-        val_true_reward,
-        val_true_terminated,
-        val_keys,
+    dyn_mae, rew_mae, term_bce, term_f1, mean_uncertainty, dyn_nll = (
+        batched_val_metrics(
+            models,
+            val_obs,
+            val_act,
+            val_true_delta_obs,
+            val_true_reward,
+            val_true_terminated,
+            val_keys,
+        )
     )
     for b, logger in enumerate(loggers):
         logger.log_validation_metrics(
@@ -187,6 +193,7 @@ def log_validation(
             term_bce[b],
             term_f1[b],
             mean_uncertainty[b],
+            dyn_nll[b],
             dataset_ptr,
         )
 

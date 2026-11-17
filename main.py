@@ -22,6 +22,7 @@ from environments import BRAX_BACKENDS, BRAX_ENVS, make_state_reconstruction_wra
 from environments.bsuite.deep_sea import DeepSea
 from logger import ExperimentLogger, log_eval, log_time
 from model_env import ModelEnvironment
+from models.base import head_out_features
 from offline_data import AREA_INDEX, load_offline_transitions
 from plant_env import PlantEnv, PlantEnvParams
 from ppo import make_rollout
@@ -217,7 +218,8 @@ def main(args: Args):
 
         obs_dim = 1
         in_features = obs_dim + action_dim
-        out_features = obs_dim
+        head = getattr(args.model, "head", "deterministic")
+        out_features = head_out_features(head, obs_dim, False)
         predict_reward_terminated = False
         oracle_reward_terminated = True
         discrete = False
@@ -289,7 +291,8 @@ def main(args: Args):
 
         obs_dim = obs_space.n if discrete_obs else obs_space.shape[0]
         in_features = obs_dim + action_dim
-        out_features = obs_dim + 2 if predict_reward_terminated else obs_dim
+        head = getattr(args.model, "head", "deterministic")
+        out_features = head_out_features(head, obs_dim, predict_reward_terminated)
 
         # Real-env steps between re-plans: one episode by default, 1 to re-plan
         # after every real step.
@@ -403,6 +406,7 @@ def main(args: Args):
             model_config=model_config,
             model_dims=(in_features, obs_dim, out_features, act_dim),
             predict_reward_terminated=predict_reward_terminated,
+            head=head,
             ppo_config=config,
             env=env,
             env_params=env_params,
