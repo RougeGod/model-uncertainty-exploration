@@ -10,6 +10,28 @@ from flax.nnx.nn.initializers import orthogonal
 from flax.nnx.nn.linear import default_kernel_init
 
 
+def effective_fan_in_init(n, fan_in):
+    """First-layer init for a model input whose first ``n`` entries have ``fan_in``
+    active (non-zero) entries per example.
+
+    A one-hot block activates 1 entry, a dense block activates all of its entries, so
+    ``fan_in`` is the sum over blocks. ``variance_scaling`` divides by the true
+    fan-in ``n``, so ``scale = n / fan_in`` gives weight variance ``1 / fan_in``.
+    When every entry is active (``fan_in == n``) this is the default lecun init.
+    Rows past ``n`` (e.g. epinet's base features and index) keep the default init.
+    """
+    rows_init = jax.nn.initializers.variance_scaling(
+        n / fan_in, "fan_in", "truncated_normal"
+    )
+
+    def init(key, shape, dtype=jnp.float32):
+        k1, k2 = jax.random.split(key)
+        w = default_kernel_init(k2, shape, dtype)
+        return w.at[:n].set(rows_init(k1, (n, shape[1]), dtype))
+
+    return init
+
+
 class Block(nnx.Module):
     def __init__(
         self,
@@ -46,12 +68,14 @@ class MLP(nnx.Module):
         use_layer_norm: bool = False,
         kernel_init=default_kernel_init,
         out_kernel_init=default_kernel_init,
+        first_kernel_init=None,
     ):
         sizes = [in_features] + [hidden_features] * num_layers
+        inits = [first_kernel_init or kernel_init] + [kernel_init] * (num_layers - 1)
         self.blocks = nnx.List(
             [
-                Block(i, o, activation, use_layer_norm, kernel_init, rngs=rngs)
-                for i, o in pairwise(sizes)
+                Block(i, o, activation, use_layer_norm, init, rngs=rngs)
+                for (i, o), init in zip(pairwise(sizes), inits, strict=False)
             ]
         )
         self.out = nnx.Linear(
@@ -173,6 +197,7 @@ class ProjectedMLP(nnx.Module):
         hidden_features: int,
         out_features: int,
         rngs: nnx.Rngs,
+        first_kernel_init=None,
         num_layers: int = 1,
         activation: str = "tanh",
     ):
@@ -182,6 +207,7 @@ class ProjectedMLP(nnx.Module):
             out_features=out_features,
             rngs=rngs,
             out_kernel_init=nnx.initializers.zeros,
+            first_kernel_init=first_kernel_init,
             use_layer_norm=False,
             num_layers=num_layers,
             activation=activation,
@@ -202,6 +228,7 @@ class MLPEnsemble(nnx.Module):
         hidden_features: int,
         out_features: int,
         rngs: nnx.Rngs,
+        first_kernel_init=None,
         num_layers: int = 1,
         activation: str = "tanh",
     ):
@@ -214,6 +241,7 @@ class MLPEnsemble(nnx.Module):
                 hidden_features,
                 out_features,
                 use_layer_norm=False,
+                first_kernel_init=first_kernel_init,
                 num_layers=num_layers,
                 activation=activation,
                 rngs=nnx.Rngs(params=key),
@@ -243,6 +271,8 @@ class EpiNet(nnx.Module):
         out_features: int,
         index_dim: int,
         *,
+        prior_scale: float = 1.0,
+        first_kernel_init=None,
         num_layers: int = 1,
         activation: str = "tanh",
         rngs: nnx.Rngs,
@@ -252,6 +282,7 @@ class EpiNet(nnx.Module):
             hidden_features=learnable_hidden_features,
             out_features=out_features * index_dim,
             rngs=rngs,
+            first_kernel_init=first_kernel_init,
             num_layers=num_layers,
             activation=activation,
         )
@@ -261,10 +292,11 @@ class EpiNet(nnx.Module):
             hidden_features=prior_hidden_features,
             out_features=out_features,
             rngs=rngs,
+            first_kernel_init=first_kernel_init,
             num_layers=num_layers,
             activation=activation,
         )
-        self.prior_scale = 1.0
+        self.prior_scale = prior_scale
 
     def __call__(self, phi, x, z, rngs: nnx.Rngs | None = None):
         return self.learnable(
@@ -285,6 +317,8 @@ class ENN(nnx.Module):
         use_layer_norm: bool = False,
         num_layers: int = 1,
         activation: str = "tanh",
+        prior_scale: float = 1.0,
+        first_kernel_init=None,
         epinet_num_layers: int = 1,
         epinet_activation: str = "tanh",
         rngs: nnx.Rngs,
@@ -296,6 +330,7 @@ class ENN(nnx.Module):
             use_layer_norm=use_layer_norm,
             num_layers=num_layers,
             activation=activation,
+            first_kernel_init=first_kernel_init,
             rngs=rngs,
         )
         self.epinet = EpiNet(
@@ -305,6 +340,8 @@ class ENN(nnx.Module):
             base_features=hidden_features,
             out_features=out_features,
             index_dim=index_dim,
+            prior_scale=prior_scale,
+            first_kernel_init=first_kernel_init,
             num_layers=epinet_num_layers,
             activation=epinet_activation,
             rngs=rngs,
