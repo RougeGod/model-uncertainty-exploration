@@ -10,12 +10,24 @@ from flax.nnx.nn.initializers import orthogonal
 from flax.nnx.nn.linear import default_kernel_init
 
 
-def onehot_rows_init(n, num_blocks):
+def effective_fan_in_init(n, fan_in):
+    """First-layer init for a model input whose first ``n`` entries have ``fan_in``
+    active (non-zero) entries per example.
+
+    A one-hot block activates 1 entry, a dense block activates all of its entries, so
+    ``fan_in`` is the sum over blocks. ``variance_scaling`` divides by the true
+    fan-in ``n``, so ``scale = n / fan_in`` gives weight variance ``1 / fan_in``.
+    When every entry is active (``fan_in == n``) this is the default lecun init.
+    Rows past ``n`` (e.g. epinet's base features and index) keep the default init.
+    """
+    rows_init = jax.nn.initializers.variance_scaling(
+        n / fan_in, "fan_in", "truncated_normal"
+    )
+
     def init(key, shape, dtype=jnp.float32):
         k1, k2 = jax.random.split(key)
         w = default_kernel_init(k2, shape, dtype)
-        rows = jax.random.normal(k1, (n, shape[1]), dtype) / np.sqrt(num_blocks)
-        return w.at[:n].set(rows)
+        return w.at[:n].set(rows_init(k1, (n, shape[1]), dtype))
 
     return init
 

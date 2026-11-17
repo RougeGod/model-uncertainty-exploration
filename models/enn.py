@@ -8,7 +8,7 @@ from flax import nnx
 from jax.scipy.stats import norm
 
 from models.base import WorldModel, head_out_features, register_model
-from networks import ENN, onehot_rows_init
+from networks import ENN, effective_fan_in_init
 
 
 class ENNModel(WorldModel):
@@ -342,6 +342,12 @@ def _make_batched_model(
     predict_reward_terminated: bool = True,
     head: Literal["deterministic", "gaussian"] = "deterministic",
 ):
+    # Active inputs per example: a one-hot block (Discrete obs / action) has 1 active
+    # entry, a dense block has all of its entries active.
+    obs_active = 1 if head == "categorical" else obs_dim
+    act_active = 1 if act_dim is not None else in_features - obs_dim
+    fan_in = obs_active + act_active
+
     @nnx.vmap
     def build(key):
         rngs = nnx.Rngs(key)
@@ -357,9 +363,7 @@ def _make_batched_model(
             num_layers=model_config["NUM_LAYERS"],
             activation=model_config["ACTIVATION"],
             prior_scale=model_config["PRIOR_SCALE"],
-            first_kernel_init=onehot_rows_init(in_features, 2)
-            if model_config["ONEHOT_INIT"]
-            else None,
+            first_kernel_init=effective_fan_in_init(in_features, fan_in),
             epinet_num_layers=epinet["num_layers"],
             epinet_activation=epinet["activation"],
             rngs=rngs,
