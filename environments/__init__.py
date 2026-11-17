@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 
+import noisy_mountain_car  # noqa: F401  (registers NoisyMountainCar-v0 with gymnax)
 from wrappers import StateReconstructionWrapper
 
 
@@ -31,6 +32,16 @@ class MountainCarWrapper(StateReconstructionWrapper):
         from gymnax.environments.classic_control.mountain_car import EnvState
 
         return EnvState(position=obs[0], velocity=obs[1], time=time)
+
+    def get_reward(self, state, action, next_state, terminated, params):
+        return jnp.array(-1.0)
+
+
+class NoisyMountainCarWrapper(StateReconstructionWrapper):
+    def get_state(self, obs, last_action, time, next_obs=None, params=None):
+        from noisy_mountain_car import EnvState
+
+        return EnvState(position=obs[0], velocity=obs[1], time=time, noise=obs[2])
 
     def get_reward(self, state, action, next_state, terminated, params):
         return jnp.array(-1.0)
@@ -227,6 +238,7 @@ class GenericBraxWrapper(BraxStateReconstructionWrapper):
 _WRAPPER_MAP = {
     "Pendulum-v1": PendulumWrapper,
     "MountainCar-v0": MountainCarWrapper,
+    "NoisyMountainCar-v0": NoisyMountainCarWrapper,
     "MountainCarContinuous-v0": MountainCarContinuousWrapper,
     "CartPole-v1": CartPoleWrapper,
     "Acrobot-v1": AcrobotWrapper,

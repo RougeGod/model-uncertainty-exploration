@@ -94,6 +94,16 @@ CASES = {
         rnd=RNDConfig(update_steps=10),
         model=TINY_ENN,
     ),
+    "rnd-noisy-mountain-car-2seeds": Args(
+        env="NoisyMountainCar-v0",
+        num_seeds=2,
+        max_steps=60,
+        steps_per_rollout=20,
+        explore_bonus="rnd",
+        ppo=TINY_PPO,
+        rnd=RNDConfig(update_steps=10),
+        model=TINY_ENN,
+    ),
     "model-free-cartpole": Args(
         env="CartPole-v1",
         model_free=True,
