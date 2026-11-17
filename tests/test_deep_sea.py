@@ -1,6 +1,6 @@
 """Tests for what environments/bsuite/deep_sea.py adds on top of gymnax's
 DeepSea: the action map carried by params (one per seed), the integer
-observation over reachable cells, and the reward/termination oracle used by the
+observation over reachable states, and the reward/termination oracle used by the
 model env."""
 
 import jax
@@ -65,23 +65,23 @@ def test_action_map_survives_autoreset(env, params):
     assert (maps == maps[:, :1]).all()
 
 
-def test_observation_is_the_reachable_cell_index(env, params):
+def test_observation_is_the_reachable_state_index(env, params):
     p, key = _first(params), jax.random.key(0)
     space = env.observation_space(p)
-    assert space.n == env.num_cells == SIZE * (SIZE + 1) // 2
+    assert space.n == env.n_states == SIZE * (SIZE + 1) // 2
 
     obs, state = env.reset(key, p)
     assert obs.dtype == jnp.int32 and obs == 0
-    # Walking down a diagonal visits cells 0, 1, 3, 6, ... (row * (row + 1) / 2 + col).
+    # Walking down a diagonal visits states 0, 1, 3, 6, ... (row * (row + 1) / 2 + col).
     a_map = env.action_map(p)
-    cells = [int(obs)]
+    states = [int(obs)]
     for _ in range(SIZE - 1):
         obs, state, *_ = env.step(key, state, a_map[state.row, state.column], p)
-        cells.append(int(obs))
-    assert cells == [r * (r + 1) // 2 + r for r in range(SIZE)]
+        states.append(int(obs))
+    assert states == [r * (r + 1) // 2 + r for r in range(SIZE)]
 
 
-def test_observation_after_the_bottom_row_is_the_reset_cell(env, params):
+def test_observation_after_the_bottom_row_is_the_reset_state(env, params):
     p, key = _first(params), jax.random.key(0)
     obs, state = env.reset(key, p)
     a_map = env.action_map(p)
@@ -91,7 +91,7 @@ def test_observation_after_the_bottom_row_is_the_reset_cell(env, params):
         )
     assert terminated
     assert obs == 0  # autoreset
-    assert info["final_observation"] == 0  # VBE: cell 0, not an off-grid value
+    assert info["final_observation"] == 0  # VBE: state 0, not an off-grid value
 
 
 def test_optimal_policy_reaches_the_goal_on_every_seed(env, params):
