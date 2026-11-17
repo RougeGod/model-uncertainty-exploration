@@ -244,7 +244,7 @@ def _beta_nll(model: ENNModel, y, target):
     loc, scale = model._loc_scale(y)
     nll = 0.5 * ((target - loc) / scale) ** 2 + jnp.log(scale)
     weight = jax.lax.stop_gradient(scale ** (2 * model.beta_nll))
-    return (weight * nll).sum(-1)
+    return (weight * nll).mean(-1)
 
 
 @nnx.jit
