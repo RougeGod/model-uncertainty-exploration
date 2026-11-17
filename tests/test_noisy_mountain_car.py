@@ -7,7 +7,7 @@ from gymnax.environments.classic_control.mountain_car import EnvState as BaseEnv
 
 import ground_truth
 from env_config import sample_validation_batch
-from environments import make_gymnax_env, make_state_reconstruction_wrapper
+from environments import make_state_reconstruction_wrapper
 from noisy_mountain_car import EnvState
 
 ENV_NAME = "NoisyMountainCar-v0"
@@ -15,7 +15,7 @@ ENV_NAME = "NoisyMountainCar-v0"
 
 @pytest.fixture(scope="module")
 def envs():
-    env, params = make_gymnax_env(ENV_NAME)
+    env, params = gymnax.make(ENV_NAME)
     base, base_params = gymnax.make("MountainCar-v0")
     return env, params, base, base_params
 

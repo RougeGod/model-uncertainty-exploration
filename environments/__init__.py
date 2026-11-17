@@ -1,7 +1,6 @@
-import gymnax
 import jax.numpy as jnp
 
-from noisy_mountain_car import NoisyMountainCar
+import noisy_mountain_car  # noqa: F401  (registers NoisyMountainCar-v0 with gymnax)
 from wrappers import StateReconstructionWrapper
 
 
@@ -274,17 +273,6 @@ BRAX_ENVS = frozenset(
 )
 
 BRAX_BACKENDS = {"swimmer": "generalized"}
-
-CUSTOM_GYMNAX_ENVS = {"NoisyMountainCar-v0": NoisyMountainCar}
-
-
-def make_gymnax_env(env_name: str):
-    cls = CUSTOM_GYMNAX_ENVS.get(env_name)
-    if cls is None:
-        return gymnax.make(env_name)
-    env = cls()
-    return env, env.default_params
-
 
 def make_state_reconstruction_wrapper(env, env_name: str) -> StateReconstructionWrapper:
     cls = _WRAPPER_MAP.get(env_name)

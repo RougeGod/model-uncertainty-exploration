@@ -9,6 +9,7 @@ and the Markov state stays fully observed.
 
 from typing import Any
 
+import gymnax
 import jax
 import jax.numpy as jnp
 from flax import struct
@@ -103,3 +104,6 @@ class NoisyMountainCar(mountain_car.MountainCar):
         return spaces.Dict(
             {**base, "noise": spaces.Box(-jnp.inf, jnp.inf, (), dtype=jnp.float32)}
         )
+
+
+gymnax.register("NoisyMountainCar-v0", NoisyMountainCar)
