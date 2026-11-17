@@ -51,16 +51,20 @@ class ModelEnvState(environment.EnvState):
 
 
 def unbatch_env_params(env_params: environment.EnvParams) -> environment.EnvParams:
-    """One seed's env params from a per-seed stack (leading axis B).
-
-    Spaces and shapes do not vary across seeds, so any slice serves static queries
-    made outside a per-seed vmap."""
     return jax.tree.map(lambda x: x[0], env_params)
+
+
+def batch_env_params(
+    env_params: environment.EnvParams, num_seeds: int
+) -> environment.EnvParams:
+    return jax.tree.map(
+        lambda x: jnp.broadcast_to(x, (num_seeds, *jnp.shape(x))), env_params
+    )
 
 
 @struct.dataclass
 class ModelEnvParams:
-    env_params: environment.EnvParams  # per-seed stack, leading axis B
+    env_params: environment.EnvParams
     max_steps_in_episode: int = struct.field(pytree_node=False)
     model: WorldModel | None = None
     rnd: RND | None = None  # per-seed RND bonus (explore_bonus="rnd")
@@ -70,8 +74,6 @@ class ModelEnvParams:
     init_weights: jnp.ndarray | None = None  # per-seed reset sampling weights, (N,)
 
     def unbatched(self) -> "ModelEnvParams":
-        """Copy whose ``env_params`` is a single seed's, for use outside the
-        per-seed vmap (space/shape queries, single-model rollouts)."""
         return self.replace(env_params=unbatch_env_params(self.env_params))
 
     def seed_vmap_axes(self) -> "ModelEnvParams":
@@ -128,7 +130,6 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
                 f"reset_source must be 'env', 'buffer' or 'init', got {reset_source!r}"
             )
         self._real_env = env
-        # Per-seed stack, leading axis B (see ``ModelEnvParams.env_params``).
         self.env_params = env_params
         single_env_params = unbatch_env_params(env_params)
         self.samples = samples

@@ -19,7 +19,12 @@ from agents.base import (
 from batching import seed_slice, vsplit
 from config import RNDConfig
 from logger import ExperimentLogger, log_time, log_validation
-from model_env import ModelEnvironment, ResetSource, reset_weights
+from model_env import (
+    ModelEnvironment,
+    ResetSource,
+    reset_weights,
+    unbatch_env_params,
+)
 from models import make_batched_model, make_batched_rngs, make_batched_train_model
 from models.base import WorldModel
 from ppo import (
@@ -186,7 +191,7 @@ class ModelBasedAgent:
             validation.evaluate_validation(
                 model,
                 base_env,
-                self.env_params,
+                unbatch_env_params(self.env_params),
                 env_name,
                 *self.val_data,
                 buffer,
@@ -199,7 +204,7 @@ class ModelBasedAgent:
             plotting.evaluate_and_plot_uncertainty(
                 model,
                 base_env,
-                self.env_params,
+                unbatch_env_params(self.env_params),
                 env_name,
                 unc_seed[0],
                 buffer,

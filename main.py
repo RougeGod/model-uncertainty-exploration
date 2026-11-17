@@ -21,7 +21,7 @@ from data import collate_rollout
 from environments import BRAX_BACKENDS, BRAX_ENVS, make_state_reconstruction_wrapper
 from environments.bsuite.deep_sea import DeepSea
 from logger import ExperimentLogger, log_eval, log_time
-from model_env import ModelEnvironment
+from model_env import ModelEnvironment, batch_env_params, unbatch_env_params
 from offline_data import AREA_INDEX, load_offline_transitions
 from plant_env import PlantEnv, PlantEnvParams
 from ppo import make_rollout
@@ -44,7 +44,6 @@ def run_online(
     agent,
     env,
     env_params,
-    env_params_axis,
     rollout_config,
     eval_config,
     loggers,
@@ -56,9 +55,7 @@ def run_online(
     """Each iteration: act in the real env, add to the buffer, update the agent."""
     key, init_key, reset_key, runner_key = vsplit(seed_keys, 4)
     reset_rng = vsplit(reset_key, rollout_config["NUM_ENVS"]).T  # (B, NUM_ENVS)
-    obsv, env_state = jax.vmap(env.reset, in_axes=(0, env_params_axis))(
-        reset_rng, env_params
-    )
+    obsv, env_state = jax.vmap(env.reset)(reset_rng, env_params)
     agent_state = agent.init(init_key)
 
     if agent.on_policy and rollout_config["NORMALIZE_OBS"]:
@@ -78,7 +75,7 @@ def run_online(
             runner_state
         )
 
-    _rollout = nnx.jit(nnx.vmap(rollout, in_axes=(0, env_params_axis)))
+    _rollout = nnx.jit(nnx.vmap(rollout))
     runner_state = (env_state, obsv, runner_key)
 
     sample = nnx.eval_shape(
@@ -102,9 +99,7 @@ def run_online(
 
         return jax.tree_util.tree_map(jax.vmap(append_one), buffer, batch)
 
-    batched_eval = evaluation.make_batched_evaluate_policy(
-        eval_config, env, env_params_axis
-    )
+    batched_eval = evaluation.make_batched_evaluate_policy(eval_config, env)
     key, eval_keys = vsplit(key)
     log_eval(
         loggers, batched_eval, agent.eval_policy(agent_state), env_params, eval_keys, 0
@@ -164,6 +159,7 @@ def run_offline(agent, buffer, loggers, seed_keys, env, env_params, seed_dir, ar
     )
 
     key, eval_keys = vsplit(key)
+    single_env_params = unbatch_env_params(env_params)
     t0 = time.perf_counter()
     plotting.plot_offline_visualization(
         agent_state.models,
@@ -171,10 +167,10 @@ def run_offline(agent, buffer, loggers, seed_keys, env, env_params, seed_dir, ar
         agent_state.eval,
         agent.model_env,
         agent.ppo_config,
-        env_params.max_steps_in_episode,
+        single_env_params.max_steps_in_episode,
         rng=eval_keys[0],
         dataset=seed_slice(buffer, 0),
-        env_params=env_params,
+        env_params=single_env_params,
         j=0,
         run_dir=seed_dir,
         explore_bonus=args.explore_bonus,
@@ -206,7 +202,7 @@ def main(args: Args):
         print(f"  N={N} | action_dim={action_dim}")
 
         env = PlantEnv(action_dim)
-        env_params = PlantEnvParams(
+        single_env_params = PlantEnvParams(
             area_min=float(observation_space.low[AREA_INDEX]),
             area_max=float(observation_space.high[AREA_INDEX]),
             act_low=jnp.asarray(action_space.low, dtype=jnp.float32),
@@ -236,19 +232,18 @@ def main(args: Args):
         val_data = None
         debug = False
         discrete_obs = False
-        seed_env_params, env_params_axis = env_params, None
 
     else:
         is_brax = args.env in BRAX_ENVS
         if is_brax:
             backend = BRAX_BACKENDS.get(args.env, "positional")
             base_env = BraxGymnaxWrapper(args.env, backend=backend)
-            env_params = base_env.default_params
+            single_env_params = base_env.default_params
         elif args.env.startswith("DeepSea-"):
             base_env = DeepSea(int(args.env.split("-")[1]))
-            env_params = base_env.default_params
+            single_env_params = base_env.default_params
         else:
-            base_env, env_params = gymnax.make(args.env)
+            base_env, single_env_params = gymnax.make(args.env)
 
         if is_brax:
             predict_reward_terminated = args.predict_reward_terminated or not hasattr(
@@ -267,11 +262,11 @@ def main(args: Args):
             and not hasattr(base_env, "get_state")
         ):
             base_env = make_state_reconstruction_wrapper(base_env, args.env)
-        action_space = base_env.action_space(env_params)
+        action_space = base_env.action_space(single_env_params)
         discrete = isinstance(action_space, spaces.Discrete)
         action_dim = action_space.n if discrete else action_space.shape[0]
         act_dim = action_space.n if discrete else None
-        obs_space = base_env.observation_space(env_params)
+        obs_space = base_env.observation_space(single_env_params)
         discrete_obs = isinstance(obs_space, spaces.Discrete)
         if discrete_obs and not args.model_free:
             raise ValueError(
@@ -279,20 +274,17 @@ def main(args: Args):
                 "a model and ModelEnvironment that handle them (categorical head). "
                 "Use --model-free."
             )
-        if args.env.startswith("DeepSea-"):
-            seed_env_params = jax.vmap(base_env.params_for_seed)(seeds)
-            env_params_axis = 0
-        else:
-            seed_env_params, env_params_axis = env_params, None
         env = _wrap_env(base_env, discrete)
 
         if is_brax:
-            val_data = validation.generate_brax_validation_data(base_env, env_params)
+            val_data = validation.generate_brax_validation_data(
+                base_env, single_env_params
+            )
         elif args.env.startswith("DeepSea-"):
             val_data = None
         else:
             val_data = validation.generate_validation_data(
-                base_env, env_params, args.env
+                base_env, single_env_params, args.env
             )
 
         obs_dim = obs_space.n if discrete_obs else obs_space.shape[0]
@@ -301,10 +293,10 @@ def main(args: Args):
 
         # Real-env steps between re-plans: one episode by default, 1 to re-plan
         # after every real step.
-        rollout_steps = args.steps_per_rollout or env_params.max_steps_in_episode
+        rollout_steps = args.steps_per_rollout or single_env_params.max_steps_in_episode
         eval_every = args.eval_every or rollout_steps
         # Tied to episode length so plan-every-step does not shrink it to 1.
-        model_minibatch_size = env_params.max_steps_in_episode
+        model_minibatch_size = single_env_params.max_steps_in_episode
         max_steps = args.max_steps or (100_000 if is_brax else 1000)
         num_rollouts = max_steps // rollout_steps
         total_timesteps = num_rollouts * rollout_steps
@@ -321,6 +313,11 @@ def main(args: Args):
             "action_dim": action_dim,
         }
         debug = args.debug and not is_brax
+
+    if not args.offline and args.env.startswith("DeepSea-"):
+        env_params = jax.vmap(base_env.params_for_seed)(seeds)
+    else:
+        env_params = batch_env_params(single_env_params, B)
 
     model_config = model_config_dict(
         args.model, max_data=dataset_size, minibatch_size=model_minibatch_size
@@ -346,7 +343,7 @@ def main(args: Args):
         eval_config = {
             **rollout_config,
             "NUM_ENVS": 100,
-            "NUM_STEPS": env_params.max_steps_in_episode,
+            "NUM_STEPS": single_env_params.max_steps_in_episode,
         }
         hparams_extra = {"rollout": rollout_config, "eval": eval_config}
 
@@ -391,11 +388,7 @@ def main(args: Args):
         )
         model_env = ModelEnvironment(
             env,
-            seed_env_params
-            if env_params_axis == 0
-            else jax.tree.map(
-                lambda x: jnp.broadcast_to(x, (B, *jnp.shape(x))), env_params
-            ),
+            env_params,
             prediction_mode=args.model_env_mode,
             explore_bonus=args.explore_bonus,
             oracle_reward_terminated=oracle_reward_terminated,
@@ -430,8 +423,7 @@ def main(args: Args):
         agent_state, size = run_online(
             agent,
             env,
-            seed_env_params,
-            env_params_axis,
+            env_params,
             rollout_config,
             eval_config,
             loggers,
