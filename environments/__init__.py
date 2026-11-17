@@ -39,10 +39,13 @@ class MountainCarWrapper(StateReconstructionWrapper):
 
 
 class NoisyMountainCarWrapper(StateReconstructionWrapper):
-    def get_state(self, obs, last_action, time, next_obs=None):
+    def get_state(self, obs, last_action, time, next_obs=None, params=None):
         from noisy_mountain_car import EnvState
 
         return EnvState(position=obs[0], velocity=obs[1], time=time, noise=obs[2])
+
+    def get_reward(self, state, action, next_state, terminated, params):
+        return jnp.array(-1.0)
 
 
 class MountainCarContinuousWrapper(StateReconstructionWrapper):

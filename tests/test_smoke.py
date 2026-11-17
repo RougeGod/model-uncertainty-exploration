@@ -95,7 +95,6 @@ CASES = {
         model=TINY_ENN,
     ),
     "rnd-noisy-mountain-car-2seeds": Args(
-        cpu=True,
         env="NoisyMountainCar-v0",
         num_seeds=2,
         max_steps=60,
