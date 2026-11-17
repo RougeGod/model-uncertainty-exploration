@@ -17,7 +17,7 @@ class ENNModel(WorldModel):
     ``head`` selects the output:
       deterministic: point estimate of the normalized delta-obs (+ reward/terminated).
       gaussian: diagonal Gaussian over the normalized delta-obs (aleatoric noise).
-      categorical: distribution over the next state (one-hot obs).
+      categorical: distribution over the next state (Discrete obs, one-hot encoded).
     For the distributional heads each epistemic index z yields a full predictive
     distribution; exploration uses only the disagreement across z (epistemic).
     """
@@ -31,12 +31,12 @@ class ENNModel(WorldModel):
         eps: float = 1e-8,
         predict_reward_terminated: bool = True,
         head: str = "deterministic",
-        min_scale: float = 1e-3,
-        beta_nll: float = 0.5,
         bootstrap: Literal["none", "bernoulli", "gaussian"] = "none",
         bootstrap_noise: float = 1.0,
         l2: float = 0.0,
         *,
+        min_scale: float,
+        beta_nll: float,
         rngs: nnx.Rngs,
     ):
         super().__init__(
@@ -86,6 +86,12 @@ class ENNModel(WorldModel):
         # one-hot obs is the first obs_dim entries of the model input.
         return x[..., : self.obs_dim]
 
+    def build_input(self, obs, action):
+        """Categorical: obs holds Discrete state indices; encode them one-hot."""
+        if self.head == "categorical":
+            obs = jax.nn.one_hot(jnp.reshape(obs, (-1,)), self.obs_dim)
+        return super().build_input(obs, action)
+
     def _loc_scale(self, y):
         loc, raw_scale = y[..., : self.obs_dim], y[..., self.obs_dim :]
         return loc, jax.nn.softplus(raw_scale) + self.min_scale
@@ -109,7 +115,7 @@ class ENNModel(WorldModel):
     def _targets(self, obs, next_obs):
         """Distribution-space targets: next-state class or normalized delta-obs."""
         if self.head == "categorical":
-            return jnp.argmax(next_obs, axis=-1)
+            return jnp.reshape(next_obs, (-1,)).astype(jnp.int32)
         return self.normalize_delta_obs(next_obs - obs)
 
     def nll(self, x, obs, next_obs):
@@ -119,14 +125,13 @@ class ENNModel(WorldModel):
         return -self.dist_from_output(y).log_prob(self._targets(obs, next_obs))
 
     def update_stats(self, dataset, pointer):
-        super().update_stats(dataset, pointer)
         if self.head == "categorical":
-            # One-hot obs: a per-column std is ~0 for unvisited states and would
-            # blow up the input, and deltas are not regressed. Keep both raw.
-            self.input_mean[: self.obs_dim] = 0.0
-            self.input_std[: self.obs_dim] = 1.0
-            self.delta_obs_mean[...] = 0.0
-            self.delta_obs_std[...] = 1.0
+            # Obs are state indices, encoded one-hot in build_input. Nothing to
+            # normalize: a per-column std is ~0 for unvisited states and would
+            # blow up the input, deltas are not regressed, and the reward is
+            # the oracle's. The identity stats from __init__ stay in place.
+            return
+        super().update_stats(dataset, pointer)
 
     def uncertainty(self, x, z, kind="std", reduce_output=True):
         """Epistemic-only uncertainty at a single x over S indices z.
@@ -193,11 +198,11 @@ def _loss_fn(model: ENNModel, batch, indices, rngs: nnx.Rngs):
         return jnp.where(keep.any(), jnp.mean(loss, where=keep), 0.0)
 
     if model.head == "categorical":
-        target = model._targets(batch.obs, batch.info["next_obs"])
+        target = model._targets(batch.obs, batch.info["final_observation"])
         nll = masked_mean(-distrax.Categorical(logits=logits).log_prob(target))
         return nll, (nll, jnp.zeros(()), jnp.zeros(()))
 
-    delta_next_state = batch.info["next_obs"] - batch.obs
+    delta_next_state = batch.info["final_observation"] - batch.obs
     delta_next_state = model.normalize_delta_obs(delta_next_state)
     delta_next_state_target = delta_next_state + noise[:, : model.obs_dim]
 
@@ -322,16 +327,19 @@ def _make_batched_model(
     @nnx.vmap
     def build(key):
         rngs = nnx.Rngs(key)
+        epinet = model_config["EPINET"]
         enn = ENN(
             in_features,
             model_config["HIDDEN_DIM"],
-            model_config["LEARNABLE_HIDDEN_DIM"],
-            model_config["PRIOR_HIDDEN_DIM"],
+            epinet["learnable_hidden_dim"],
+            epinet["prior_hidden_dim"],
             out_features,
-            model_config["INDEX_DIM"],
+            epinet["index_dim"],
             use_layer_norm=model_config.get("USE_LAYER_NORM", False),
             num_layers=model_config["NUM_LAYERS"],
             activation=model_config["ACTIVATION"],
+            epinet_num_layers=epinet["num_layers"],
+            epinet_activation=epinet["activation"],
             rngs=rngs,
         )
         model = ENNModel(
@@ -341,8 +349,8 @@ def _make_batched_model(
             act_dim=act_dim,
             predict_reward_terminated=predict_reward_terminated,
             head=head,
-            min_scale=model_config.get("MIN_SCALE", 1e-3),
-            beta_nll=model_config.get("BETA_NLL", 0.5),
+            min_scale=model_config["MIN_SCALE"],
+            beta_nll=model_config["BETA_NLL"],
             bootstrap=model_config["BOOTSTRAP"],
             bootstrap_noise=model_config["BOOTSTRAP_NOISE"],
             l2=model_config["L2"],

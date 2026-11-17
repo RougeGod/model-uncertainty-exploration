@@ -5,6 +5,7 @@ import jax.numpy as jnp
 from flax import struct
 from gymnax.environments import environment, spaces
 
+from batching import seed_slice
 from models import WorldModel
 from rnd import RND
 
@@ -61,12 +62,15 @@ class ModelEnvParams:
     init_obs: jnp.ndarray | None = None  # per-seed replay buffer obs, (N, obs_dim)
     init_weights: jnp.ndarray | None = None  # per-seed reset sampling weights, (N,)
 
+    def unbatched(self) -> "ModelEnvParams":
+        return self.replace(env_params=seed_slice(self.env_params, 0))
+
     def seed_vmap_axes(self) -> "ModelEnvParams":
-        """vmap ``in_axes`` prefix that maps the per-seed ``model`` subtree and
-        ``init_obs``/``init_weights`` buffers on axis 0; every other dynamic field
-        is broadcast (None)."""
+        """vmap ``in_axes`` prefix that maps the per-seed ``env_params``, ``model``
+        subtree and ``init_obs``/``init_weights`` buffers on axis 0; every other
+        dynamic field is broadcast (None)."""
         return self.replace(
-            env_params=None,
+            env_params=0,
             model=0,
             rnd=0,
             alpha=None,
@@ -115,7 +119,8 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
                 f"reset_source must be 'env', 'buffer' or 'init', got {reset_source!r}"
             )
         self._real_env = env
-        self._real_env_params = env_params
+        self.env_params = env_params
+        single_env_params = seed_slice(env_params, 0)
         self.samples = samples
         self.prediction_mode = prediction_mode
         self.explore_bonus = explore_bonus
@@ -124,17 +129,17 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
         self._max_steps_override = max_steps_in_episode
         self.uncertainty_threshold = uncertainty_threshold
         self._zero_action = jnp.zeros_like(
-            env.action_space(env_params).sample(jax.random.key(0))
+            env.action_space(single_env_params).sample(jax.random.key(0))
         )
 
     @property
     def default_params(self) -> ModelEnvParams:
         return ModelEnvParams(
-            env_params=self._real_env_params,
+            env_params=self.env_params,
             max_steps_in_episode=(
                 self._max_steps_override
                 if self._max_steps_override is not None
-                else self._real_env_params.max_steps_in_episode
+                else int(seed_slice(self.env_params, 0).max_steps_in_episode)
             ),
         )
 
@@ -170,7 +175,7 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
         )
         obs = jax.lax.select(done, obs_re, obs_st)
 
-        info = {**info, "next_obs": obs_st}
+        info = {**info, "final_observation": obs_st}
 
         return obs, state, reward, terminated, truncated, info
 
@@ -214,23 +219,34 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
             r_intrinsic = model.uncertainty(x, state.z, self.explore_bonus)
 
         delta_obs = model.denormalize_delta_obs(delta_norm)
-        obs = state.obs + delta_obs
-        obs = jnp.clip(
-            obs,
-            self._real_env.observation_space(params.env_params).low,
-            self._real_env.observation_space(params.env_params).high,
-        )
+        if getattr(model, "head", None) == "categorical":
+            # Discrete obs are state indices; the model's delta is
+            # one_hot(s') - one_hot(s), so s' is the argmax of their sum.
+            obs = jnp.argmax(
+                jax.nn.one_hot(state.obs, model.obs_dim) + delta_obs, axis=-1
+            ).astype(state.obs.dtype)
+        else:
+            obs = state.obs + delta_obs
+            obs = jnp.clip(
+                obs,
+                self._real_env.observation_space(params.env_params).low,
+                self._real_env.observation_space(params.env_params).high,
+            )
         if self.explore_bonus == "rnd":
             # Novelty of the predicted next observation.
             r_intrinsic = params.rnd(obs)
         if self.oracle_reward_terminated:
             if hasattr(self._real_env, "obs_to_reward_terminated"):
                 r_exploit, terminated = self._real_env.obs_to_reward_terminated(
-                    state.obs, action, obs
+                    state.obs, action, obs, params.env_params
                 )
             else:
                 reconstructed = self._real_env.get_state(
-                    state.obs, state.last_action, state.time, next_obs=obs
+                    state.obs,
+                    state.last_action,
+                    state.time,
+                    next_obs=obs,
+                    params=params.env_params,
                 )
                 _, _, r_exploit, terminated, _ = self._real_env.step_env(
                     key, reconstructed, action, params.env_params
