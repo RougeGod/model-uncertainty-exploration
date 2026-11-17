@@ -1,8 +1,3 @@
-"""Tests for what environments/bsuite/deep_sea.py adds on top of gymnax's
-DeepSea: the action map carried by params (one per seed), the integer
-observation over reachable states, and the reward/termination oracle used by the
-model env."""
-
 import jax
 import jax.numpy as jnp
 import pytest
@@ -53,7 +48,7 @@ def test_action_map_survives_autoreset(env, params):
 
         def body(carry, k):
             state = carry
-            action = jax.random.randint(k, (), 0, 2)
+            action = env.action_space(p).sample(k)
             _, state, _, terminated, _, _ = env.step(k, state, action, p)
             return state, (state.action_mapping, terminated)
 
@@ -90,8 +85,8 @@ def test_observation_after_the_bottom_row_is_the_reset_state(env, params):
             key, state, a_map[state.row, state.column], p
         )
     assert terminated
-    assert obs == 0  # autoreset
-    assert info["final_observation"] == 0  # VBE: state 0, not an off-grid value
+    assert obs == 0
+    assert info["final_observation"] == 0
 
 
 def test_optimal_policy_reaches_the_goal_on_every_seed(env, params):
@@ -110,7 +105,7 @@ def test_optimal_policy_reaches_the_goal_on_every_seed(env, params):
 
     keys = jax.random.split(jax.random.key(0), len(SEEDS))
     returns = jax.vmap(run)(params, keys)
-    assert jnp.allclose(returns, 1 - 0.01)  # goal reward minus the move cost
+    assert jnp.allclose(returns, 1 - params.unscaled_move_cost)
 
 
 def test_oracle_matches_env_step(env, params):
@@ -119,8 +114,7 @@ def test_oracle_matches_env_step(env, params):
 
         def body(carry, k):
             obs, state = carry
-            action = jax.random.randint(k, (), 0, 2)
-            # What ModelEnvironment does: rebuild the state from the observation.
+            action = env.action_space(p).sample(k)
             rebuilt = env.get_state(obs, action, state.time, params=p)
             next_obs, state, reward, terminated, *_ = env.step(k, state, action, p)
             _, _, oracle_reward, oracle_terminated, _ = env.step_env(
