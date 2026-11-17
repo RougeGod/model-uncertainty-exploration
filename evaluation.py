@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 from flax import nnx
 
+from ppo import make_rollout
+
 
 def evaluate_policy(eval_config, env, env_params, rollout_fn, eval_train_state, rng):
     """Roll out the policy and return the mean return over completed episodes.
@@ -22,12 +24,13 @@ def evaluate_policy(eval_config, env, env_params, rollout_fn, eval_train_state, 
     return jnp.where(jnp.any(done), mean_return, 0.0)
 
 
-def make_batched_evaluate_policy(eval_config, env, env_params, rollout_fn):
+def make_batched_evaluate_policy(eval_config, env):
     """Vmap policy evaluation over a leading seed axis; returns (B,) mean returns."""
 
-    def one(eval_train_state, rng):
+    def one(eval_train_state, rng, params):
+        rollout_fn = make_rollout(eval_config, env, params, training=False)
         return evaluate_policy(
-            eval_config, env, env_params, rollout_fn, eval_train_state, rng
+            eval_config, env, params, rollout_fn, eval_train_state, rng
         )
 
-    return nnx.jit(nnx.vmap(one, in_axes=(0, 0), out_axes=0))
+    return nnx.jit(nnx.vmap(one, out_axes=0))
