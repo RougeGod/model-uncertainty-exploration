@@ -21,10 +21,12 @@ def _coerce_hparam(value):
 
 
 class ExperimentLogger:
-    def __init__(self, log_dir: str):
+    def __init__(self, log_dir: str, discrete_obs: bool = False):
         self._writer = SummaryWriter(log_dir=log_dir)
         self._hparams: dict[str, bool | str | float | int] = {}
         self._summary_metrics: dict[str, float] = {}
+        self._discrete_obs = discrete_obs
+        self._visited: set[int] = set()
         print(f"TensorBoard logging to {log_dir}")
 
     def log_hparams(self, **sections):
@@ -44,8 +46,20 @@ class ExperimentLogger:
         actions = np.asarray(batch.action)
         rewards = np.asarray(batch.reward)
 
-        for i in range(obs.shape[1]):
-            self._log_time_series(f"dataset/obs_{i}", obs[:, i], start_step)
+        if self._discrete_obs:
+            self._log_time_series("dataset/state", obs, start_step)
+            is_new = np.zeros(len(obs), dtype=bool)
+            is_new[np.unique(obs, return_index=True)[1]] = True
+            is_new &= ~np.isin(obs, list(self._visited))
+            self._log_time_series(
+                "coverage/unique_states",
+                len(self._visited) + np.cumsum(is_new),
+                start_step,
+            )
+            self._visited.update(obs.tolist())
+        else:
+            for i in range(obs.shape[1]):
+                self._log_time_series(f"dataset/obs_{i}", obs[:, i], start_step)
         for i in range(actions.shape[1]):
             self._log_time_series(f"dataset/action_{i}", actions[:, i], start_step)
         self._log_time_series("dataset/reward", rewards, start_step)
@@ -177,8 +191,10 @@ def log_validation(
         )
 
 
-def log_eval(loggers, batched_eval, eval_policy_state, eval_keys, dataset_ptr):
-    mean_returns = batched_eval(eval_policy_state, eval_keys)
+def log_eval(
+    loggers, batched_eval, eval_policy_state, env_params, eval_keys, dataset_ptr
+):
+    mean_returns = batched_eval(eval_policy_state, eval_keys, env_params)
     for b, logger in enumerate(loggers):
         logger.log_eval_return(dataset_ptr, mean_returns[b])
 

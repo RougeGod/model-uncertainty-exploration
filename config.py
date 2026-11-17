@@ -109,7 +109,6 @@ class Args:
     offline: bool = False
     dataset: str = "plant-data/visu-v27"
     debug: bool = False
-    cpu: bool = False
     log_dir: str | None = None
     label: str = ""
     ppo: PPOConfig = field(default_factory=PPOConfig)
@@ -172,11 +171,14 @@ def ppo_config_dict(
     env_name: str,
     seed: int,
     offline: bool,
+    discrete_obs: bool = False,
 ) -> dict:
     """Convert PPO config to the UPPERCASE dict ppo.py expects.
 
     Computes derived keys NUM_UPDATES and MINIBATCH_SIZE from the tunable base
     keys so that overriding e.g. --ppo.num-envs automatically re-derives them.
+    Also derives NORMALIZE_OBS / NORMALIZE_REWARD from ``normalize_env``;
+    observation normalization is meaningless for Discrete (index) observations.
     """
     d: dict = {k.upper(): v for k, v in dataclasses.asdict(p).items()}
     if not offline:
@@ -184,4 +186,6 @@ def ppo_config_dict(
     d["SEED"] = seed
     d["NUM_UPDATES"] = int(d["TOTAL_TIMESTEPS"]) // d["NUM_STEPS"] // d["NUM_ENVS"]
     d["MINIBATCH_SIZE"] = d["NUM_ENVS"] * d["NUM_STEPS"] // d["NUM_MINIBATCHES"]
+    d["NORMALIZE_OBS"] = d["NORMALIZE_ENV"] and not discrete_obs
+    d["NORMALIZE_REWARD"] = d["NORMALIZE_ENV"]
     return d
