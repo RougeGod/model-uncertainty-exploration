@@ -21,7 +21,7 @@ from data import collate_rollout
 from environments import BRAX_BACKENDS, BRAX_ENVS, make_state_reconstruction_wrapper
 from environments.bsuite.deep_sea import DeepSea
 from logger import ExperimentLogger, log_eval, log_time
-from model_env import ModelEnvironment, batch_env_params, unbatch_env_params
+from model_env import ModelEnvironment
 from offline_data import AREA_INDEX, load_offline_transitions
 from plant_env import PlantEnv, PlantEnvParams
 from ppo import make_rollout
@@ -159,7 +159,7 @@ def run_offline(agent, buffer, loggers, seed_keys, env, env_params, seed_dir, ar
     )
 
     key, eval_keys = vsplit(key)
-    single_env_params = unbatch_env_params(env_params)
+    single_env_params = seed_slice(env_params, 0)
     t0 = time.perf_counter()
     plotting.plot_offline_visualization(
         agent_state.models,
@@ -317,7 +317,9 @@ def main(args: Args):
     if not args.offline and args.env.startswith("DeepSea-"):
         env_params = jax.vmap(base_env.params_for_seed)(seeds)
     else:
-        env_params = batch_env_params(single_env_params, B)
+        env_params = jax.tree.map(
+            lambda x: jnp.broadcast_to(x, (B, *jnp.shape(x))), single_env_params
+        )
 
     model_config = model_config_dict(
         args.model, max_data=dataset_size, minibatch_size=model_minibatch_size

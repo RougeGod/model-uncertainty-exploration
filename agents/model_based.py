@@ -23,7 +23,6 @@ from model_env import (
     ModelEnvironment,
     ResetSource,
     reset_weights,
-    unbatch_env_params,
 )
 from models import make_batched_model, make_batched_rngs, make_batched_train_model
 from models.base import WorldModel
@@ -191,7 +190,7 @@ class ModelBasedAgent:
             validation.evaluate_validation(
                 model,
                 base_env,
-                unbatch_env_params(self.env_params),
+                seed_slice(self.env_params, 0),
                 env_name,
                 *self.val_data,
                 buffer,
@@ -204,7 +203,7 @@ class ModelBasedAgent:
             plotting.evaluate_and_plot_uncertainty(
                 model,
                 base_env,
-                unbatch_env_params(self.env_params),
+                seed_slice(self.env_params, 0),
                 env_name,
                 unc_seed[0],
                 buffer,

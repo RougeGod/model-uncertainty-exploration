@@ -5,6 +5,7 @@ import jax.numpy as jnp
 from flax import struct
 from gymnax.environments import environment, spaces
 
+from batching import seed_slice
 from models import WorldModel
 from rnd import RND
 
@@ -50,18 +51,6 @@ class ModelEnvState(environment.EnvState):
     last_action: jnp.ndarray
 
 
-def unbatch_env_params(env_params: environment.EnvParams) -> environment.EnvParams:
-    return jax.tree.map(lambda x: x[0], env_params)
-
-
-def batch_env_params(
-    env_params: environment.EnvParams, num_seeds: int
-) -> environment.EnvParams:
-    return jax.tree.map(
-        lambda x: jnp.broadcast_to(x, (num_seeds, *jnp.shape(x))), env_params
-    )
-
-
 @struct.dataclass
 class ModelEnvParams:
     env_params: environment.EnvParams
@@ -74,7 +63,7 @@ class ModelEnvParams:
     init_weights: jnp.ndarray | None = None  # per-seed reset sampling weights, (N,)
 
     def unbatched(self) -> "ModelEnvParams":
-        return self.replace(env_params=unbatch_env_params(self.env_params))
+        return self.replace(env_params=seed_slice(self.env_params, 0))
 
     def seed_vmap_axes(self) -> "ModelEnvParams":
         """vmap ``in_axes`` prefix that maps the per-seed ``env_params``, ``model``
@@ -131,7 +120,7 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
             )
         self._real_env = env
         self.env_params = env_params
-        single_env_params = unbatch_env_params(env_params)
+        single_env_params = seed_slice(env_params, 0)
         self.samples = samples
         self.prediction_mode = prediction_mode
         self.explore_bonus = explore_bonus
@@ -150,7 +139,7 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
             max_steps_in_episode=(
                 self._max_steps_override
                 if self._max_steps_override is not None
-                else int(unbatch_env_params(self.env_params).max_steps_in_episode)
+                else int(seed_slice(self.env_params, 0).max_steps_in_episode)
             ),
         )
 
