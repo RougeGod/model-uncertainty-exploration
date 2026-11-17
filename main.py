@@ -74,7 +74,6 @@ def run_online(
         _init_obs_stats(agent.explore_policy(agent_state), obsv)
 
     def rollout(runner_state, params):
-        params = env_params if env_params_axis is None else params
         return make_rollout(rollout_config, env, params, training=agent.on_policy)(
             runner_state
         )
@@ -104,10 +103,12 @@ def run_online(
         return jax.tree_util.tree_map(jax.vmap(append_one), buffer, batch)
 
     batched_eval = evaluation.make_batched_evaluate_policy(
-        eval_config, env, env_params, env_params_axis
+        eval_config, env, env_params_axis
     )
     key, eval_keys = vsplit(key)
-    log_eval(loggers, batched_eval, agent.eval_policy(agent_state), eval_keys, 0)
+    log_eval(
+        loggers, batched_eval, agent.eval_policy(agent_state), env_params, eval_keys, 0
+    )
     eval_policy = agent.eval_policy(agent_state)
 
     for rollout in range(num_rollouts):
@@ -129,7 +130,7 @@ def run_online(
         first = (prev_size // eval_every + 1) * eval_every
         for step in range(first, size, eval_every):
             key, eval_keys = vsplit(key)
-            log_eval(loggers, batched_eval, eval_policy, eval_keys, step)
+            log_eval(loggers, batched_eval, eval_policy, env_params, eval_keys, step)
 
         key, update_key = vsplit(key)
         agent_state = agent.update(
@@ -140,14 +141,14 @@ def run_online(
         if size % eval_every == 0 or rollout == num_rollouts - 1:
             key, eval_keys = vsplit(key)
             t0 = time.perf_counter()
-            log_eval(loggers, batched_eval, eval_policy, eval_keys, size)
+            log_eval(loggers, batched_eval, eval_policy, env_params, eval_keys, size)
             log_time(loggers, "time/eval_s", t0, size)
 
     # Grid points past the last rollout: the policy has not changed since.
     first = (size // eval_every + 1) * eval_every
     for step in range(first, max_steps + 1, eval_every):
         key, eval_keys = vsplit(key)
-        log_eval(loggers, batched_eval, eval_policy, eval_keys, step)
+        log_eval(loggers, batched_eval, eval_policy, env_params, eval_keys, step)
 
     return agent_state, size
 

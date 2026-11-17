@@ -191,8 +191,10 @@ def log_validation(
         )
 
 
-def log_eval(loggers, batched_eval, eval_policy_state, eval_keys, dataset_ptr):
-    mean_returns = batched_eval(eval_policy_state, eval_keys)
+def log_eval(
+    loggers, batched_eval, eval_policy_state, env_params, eval_keys, dataset_ptr
+):
+    mean_returns = batched_eval(eval_policy_state, eval_keys, env_params)
     for b, logger in enumerate(loggers):
         logger.log_eval_return(dataset_ptr, mean_returns[b])
 
