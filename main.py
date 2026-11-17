@@ -220,7 +220,9 @@ def main(args: Args):
         in_features = obs_dim + action_dim
         head = getattr(args.model, "head", "deterministic")
         if head == "categorical":
-            raise ValueError("--model.head categorical needs a Discrete observation space")
+            raise ValueError(
+                "--model.head categorical needs a Discrete observation space"
+            )
         out_features = head_out_features(head, obs_dim, False)
         predict_reward_terminated = False
         oracle_reward_terminated = True
