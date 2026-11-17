@@ -4,6 +4,7 @@ from flax import struct
 from gymnax.environments import spaces
 from gymnax.environments.bsuite.deep_sea import DeepSea as GymnaxDeepSea
 from gymnax.environments.bsuite.deep_sea import EnvParams as GymnaxDeepSeaEnvParams
+from gymnax.environments.bsuite.deep_sea import EnvState
 
 
 @struct.dataclass
@@ -22,7 +23,6 @@ class DeepSea(GymnaxDeepSea):
             jnp.full((size, size), -1).at[rows, cols].set(rows * (rows + 1) // 2 + cols)
         )
         self.n_states = size * (size + 1) // 2
-        self.goal = self.n_states - 1
 
     def params_for_seed(self, seed) -> EnvParams:
         return EnvParams(
@@ -53,23 +53,14 @@ class DeepSea(GymnaxDeepSea):
     def observation_space(self, params) -> spaces.Discrete:
         return spaces.Discrete(self.n_states)
 
-    def reward_table(self, action, params) -> jax.Array:
-        """r(state, action) for every state, shape (n_states,)."""
-        right_action = self.action_map(params)[self.state_rows, self.state_columns]
-        right = right_action == jnp.reshape(action, ()).astype(jnp.int32)
-        goal = jax.nn.one_hot(self.goal, self.n_states)
-        return right * (goal - params.unscaled_move_cost / self.size)
-
-    def terminated_table(self) -> jax.Array:
-        """Whether each state is on the bottom row, shape (n_states,)."""
-        return jnp.arange(self.n_states) >= self.n_states - self.size
-
-    def obs_to_reward_terminated(self, obs, action, next_obs, params):
-        """Oracle reward and termination for the model env.
-
-        Both are read from the current state: by VBE's convention the observation
-        after the bottom row is the reset state 0, so ``next_obs`` carries no
-        termination information.
-        """
-        reward = self.reward_table(action, params)[obs]
-        return reward.astype(jnp.float32), self.terminated_table()[obs]
+    def get_state(self, obs, last_action, time, next_obs=None, params=None):
+        return EnvState(
+            row=self.state_rows[obs],
+            column=self.state_columns[obs],
+            bad_episode=False,
+            total_bad_episodes=0,
+            denoised_return=0,
+            optimal_return=0.0,
+            action_mapping=self.action_map(params),
+            time=time,
+        )

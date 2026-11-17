@@ -260,8 +260,10 @@ def main(args: Args):
         # oracle for reward/termination (ModelEnvironment.get_state is its sole caller,
         # gated on oracle_reward_terminated). Skip it when --predict_reward_terminated is
         # set so envs without a registered wrapper don't hit the wrapper's ValueError.
-        if not predict_reward_terminated and not hasattr(
-            base_env, "obs_to_reward_terminated"
+        if (
+            not predict_reward_terminated
+            and not hasattr(base_env, "obs_to_reward_terminated")
+            and not hasattr(base_env, "get_state")
         ):
             base_env = make_state_reconstruction_wrapper(base_env, args.env)
         action_space = base_env.action_space(env_params)

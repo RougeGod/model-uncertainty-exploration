@@ -120,9 +120,11 @@ def test_oracle_matches_env_step(env, params):
         def body(carry, k):
             obs, state = carry
             action = jax.random.randint(k, (), 0, 2)
-            next_obs, state, reward, terminated, _, info = env.step(k, state, action, p)
-            oracle_reward, oracle_terminated = env.obs_to_reward_terminated(
-                obs, action, info["final_observation"], p
+            # What ModelEnvironment does: rebuild the state from the observation.
+            rebuilt = env.get_state(obs, action, state.time, params=p)
+            next_obs, state, reward, terminated, *_ = env.step(k, state, action, p)
+            _, _, oracle_reward, oracle_terminated, _ = env.step_env(
+                k, rebuilt, action, p
             )
             return (next_obs, state), (
                 reward,

@@ -4,7 +4,7 @@ from wrappers import StateReconstructionWrapper
 
 
 class PendulumWrapper(StateReconstructionWrapper):
-    def get_state(self, obs, last_action, time, next_obs=None):
+    def get_state(self, obs, last_action, time, next_obs=None, params=None):
         from gymnax.environments.classic_control.pendulum import EnvState
 
         return EnvState(
@@ -27,7 +27,7 @@ class PendulumWrapper(StateReconstructionWrapper):
 
 
 class MountainCarWrapper(StateReconstructionWrapper):
-    def get_state(self, obs, last_action, time, next_obs=None):
+    def get_state(self, obs, last_action, time, next_obs=None, params=None):
         from gymnax.environments.classic_control.mountain_car import EnvState
 
         return EnvState(position=obs[0], velocity=obs[1], time=time)
@@ -37,7 +37,7 @@ class MountainCarWrapper(StateReconstructionWrapper):
 
 
 class MountainCarContinuousWrapper(StateReconstructionWrapper):
-    def get_state(self, obs, last_action, time, next_obs=None):
+    def get_state(self, obs, last_action, time, next_obs=None, params=None):
         from gymnax.environments.classic_control.continuous_mountain_car import EnvState
 
         return EnvState(position=obs[0], velocity=obs[1], time=time)
@@ -47,7 +47,7 @@ class MountainCarContinuousWrapper(StateReconstructionWrapper):
 
 
 class CartPoleWrapper(StateReconstructionWrapper):
-    def get_state(self, obs, last_action, time, next_obs=None):
+    def get_state(self, obs, last_action, time, next_obs=None, params=None):
         from gymnax.environments.classic_control.cartpole import EnvState
 
         return EnvState(
@@ -59,7 +59,7 @@ class CartPoleWrapper(StateReconstructionWrapper):
 
 
 class AcrobotWrapper(StateReconstructionWrapper):
-    def get_state(self, obs, last_action, time, next_obs=None):
+    def get_state(self, obs, last_action, time, next_obs=None, params=None):
         from gymnax.environments.classic_control.acrobot import EnvState
 
         return EnvState(
@@ -82,7 +82,7 @@ class AcrobotWrapper(StateReconstructionWrapper):
 class BraxStateReconstructionWrapper(StateReconstructionWrapper):
     """Base for brax envs: state reconstruction from obs is not possible."""
 
-    def get_state(self, obs, last_action, time, next_obs=None):
+    def get_state(self, obs, last_action, time, next_obs=None, params=None):
         raise NotImplementedError(
             "Brax pipeline states cannot be reconstructed from observations. "
             "Use predict_reward_terminated=True (model predictions) or ensure "

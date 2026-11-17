@@ -240,7 +240,11 @@ class ModelEnvironment(environment.Environment[ModelEnvState, ModelEnvParams]):
                 )
             else:
                 reconstructed = self._real_env.get_state(
-                    state.obs, state.last_action, state.time, next_obs=obs
+                    state.obs,
+                    state.last_action,
+                    state.time,
+                    next_obs=obs,
+                    params=params.env_params,
                 )
                 _, _, r_exploit, terminated, _ = self._real_env.step_env(
                     key, reconstructed, action, params.env_params
