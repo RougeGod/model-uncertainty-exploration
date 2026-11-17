@@ -81,9 +81,6 @@ ENVS = [
     "Acrobot-v1",
 ]
 
-# Custom envs that share episode length with a gymnax env.
-GYMNAX_EPISODE_ENV = {"NoisyMountainCar-v0": "MountainCar-v0"}
-
 EXPLORE_POLICY = {
     "a1p0_b0p0": "exploit",
     "a0p0_b1p0": "explore",
@@ -159,9 +156,15 @@ PLOTS: dict[str, PlotConfig] = {
 @lru_cache
 def _env_steps_per_iteration(env_name: str) -> int:
     """Env steps collected per outer iteration (matches main.py rollout config)."""
+    import sys
+
     import gymnax
 
-    _, env_params = gymnax.make(GYMNAX_EPISODE_ENV.get(env_name, env_name))
+    # Scripts run with scripts/ on sys.path; the repo root holds the env module.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import noisy_mountain_car  # noqa: F401  (registers NoisyMountainCar-v0)
+
+    _, env_params = gymnax.make(env_name)
     return env_params.max_steps_in_episode // 10
 
 
