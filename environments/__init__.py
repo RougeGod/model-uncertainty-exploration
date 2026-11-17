@@ -274,6 +274,7 @@ BRAX_ENVS = frozenset(
 
 BRAX_BACKENDS = {"swimmer": "generalized"}
 
+
 def make_state_reconstruction_wrapper(env, env_name: str) -> StateReconstructionWrapper:
     cls = _WRAPPER_MAP.get(env_name)
     if cls is None:
