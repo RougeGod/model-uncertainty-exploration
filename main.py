@@ -219,10 +219,6 @@ def main(args: Args):
         obs_dim = 1
         in_features = obs_dim + action_dim
         head = getattr(args.model, "head", "deterministic")
-        if head == "categorical":
-            raise ValueError(
-                "--model.head categorical needs a Discrete observation space"
-            )
         out_features = head_out_features(head, obs_dim, False)
         predict_reward_terminated = False
         oracle_reward_terminated = True
@@ -284,10 +280,6 @@ def main(args: Args):
             if head == "categorical" and not discrete_obs:
                 raise ValueError(
                     "--model.head categorical needs a Discrete observation space"
-                )
-            if discrete_obs and args.explore_bonus == "rnd":
-                raise ValueError(
-                    "--explore-bonus rnd does not support Discrete observations"
                 )
         env = _wrap_env(base_env, discrete)
 
