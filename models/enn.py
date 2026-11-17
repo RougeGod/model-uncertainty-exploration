@@ -70,21 +70,17 @@ class ENNModel(WorldModel):
     def predict_mean(self, x):
         """Expected normalized delta-obs from the base network for a single input.
 
-        gaussian: the Gaussian loc. categorical: E[one_hot(s')] - obs = probs - obs.
+        gaussian: the Gaussian loc. categorical: the next-state probabilities
+        (there is no delta; see ``predict_next_obs``).
         """
         y, _ = self.enn.base(x)
         if self.head == "gaussian":
             return y[..., : self.obs_dim]
         if self.head == "categorical":
-            return jax.nn.softmax(y, axis=-1) - self._obs(x)
+            return jax.nn.softmax(y, axis=-1)
         return y
 
     # --- Distributional heads ---
-
-    def _obs(self, x):
-        # Categorical inputs are left unnormalized (see update_stats), so the
-        # one-hot obs is the first obs_dim entries of the model input.
-        return x[..., : self.obs_dim]
 
     def build_input(self, obs, action):
         """Categorical: obs holds Discrete state indices; encode them one-hot."""
@@ -107,10 +103,22 @@ class ENNModel(WorldModel):
     def sample_delta(self, x, index, key):
         if self.head == "deterministic":
             return super().sample_delta(x, index, key)
-        sample = self.dist_from_output(self.predict_sample(x, index)).sample(seed=key)
         if self.head == "categorical":
-            return jax.nn.one_hot(sample, self.obs_dim) - self._obs(x)
-        return sample
+            raise NotImplementedError(
+                "categorical predicts the next state, not a delta; use predict_next_obs"
+            )
+        return self.dist_from_output(self.predict_sample(x, index)).sample(seed=key)
+
+    def predict_next_obs(self, x, obs, index, key, mean: bool):
+        if self.head != "categorical":
+            return super().predict_next_obs(x, obs, index, key, mean)
+        # Discrete obs are state indices: the sampled class, or the mode.
+        if mean:
+            next_obs = jnp.argmax(self.predict_mean(x), axis=-1)
+        else:
+            dist = self.dist_from_output(self.predict_sample(x, index))
+            next_obs = dist.sample(seed=key)
+        return next_obs.astype(obs.dtype)
 
     def _targets(self, obs, next_obs):
         """Distribution-space targets: next-state class or normalized delta-obs."""

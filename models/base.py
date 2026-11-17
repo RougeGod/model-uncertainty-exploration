@@ -70,6 +70,19 @@ class WorldModel(nnx.Module):
         """
         return self.predict_sample(x, index)[..., : self.obs_dim]
 
+    def predict_next_obs(self, x, obs, index, key, mean: bool):
+        """Next observation at a single input, in the env's observation convention.
+
+        ``mean`` uses the deterministic posterior mean; otherwise the epistemic
+        index ``index`` is fixed and ``key`` drives any aleatoric sampling.
+        Continuous models add the denormalized predicted delta to ``obs``.
+        """
+        if mean:
+            delta_norm = self.predict_mean(x)[..., : self.obs_dim]
+        else:
+            delta_norm = self.sample_delta(x, index, key)
+        return obs + self.denormalize_delta_obs(delta_norm)
+
     def nll(self, x, obs, next_obs):
         """Negative log-likelihood of ``next_obs`` under the mean predictive
         distribution at a single input. Zero for point-estimate models."""
