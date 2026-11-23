@@ -1,9 +1,6 @@
-from typing import Sequence, Callable, Optional
+from typing import Callable, Optional
 
 import chex
-import numpy as np
-import gymnasium as gym
-from flax import linen as nn
 from opax.utils.models import FSVGDEnsemble, ProbabilisticEnsembleModel
 import jax
 import jax.numpy as jnp
@@ -11,13 +8,13 @@ from opax.utils.utils import sample_normal_dist
 from opax.utils.replay_buffer import Transition
 from opax.models.dynamics_model import DynamicsModel, ModelSummary
 from opax.utils.type_aliases import ModelProperties
-from opax.models.reward_model import RewardModel
-from typing import List, Union
+from typing import Any, List, Union
 from opax.utils.utils import gaussian_log_likelihood
-from opax.utils.network_utils import mse
 from jaxtyping import PyTree
-from opax.utils.ground_truth import sample_validation_batch, true_transition
-import gymnax
+
+
+def mse(y: chex.Array, pred: chex.Array) -> chex.Array:
+    return jnp.mean(jnp.square(y - pred))
 
 class SamplingType:
     name: str = 'TS1'
@@ -55,13 +52,14 @@ def sample(predictions: chex.Array, idx: chex.Array, s_rng: jax.Array):
 class BayesianDynamicsModel(DynamicsModel):
 
     def __init__(self,
-                 action_space: gym.spaces.box,
-                 observation_space: gym.spaces.box,
-                 reward_model: RewardModel,
+                 obs_dim: int,
+                 act_dim: int,
+                 reward_model: Any,
                  model_class: str = "ProbabilisticEnsembleModel",
                  num_ensemble: int = 10,
-                 features: Sequence[int] = (256, 256),
-                 non_linearity: Callable = nn.swish,
+                 hidden_dim: int = 256,
+                 num_layers: int = 2,
+                 activation: str = "swish",
                  lr: float = 1e-3,
                  weight_decay: float = 1e-4,
                  sig_min: float = 1e-3,
@@ -73,13 +71,14 @@ class BayesianDynamicsModel(DynamicsModel):
                  ):
         """
 
-        :param action_space: gym.spaces.box, action space of the env
-        :param observation_space: gym.spaces.box, observation space of the env
-        :param reward_model: RewardModel
+        :param obs_dim: int, flat observation dimension
+        :param act_dim: int, model-space action dimension (the applied action, without HUCRL's eta)
+        :param reward_model: object with predict(obs, action, next_obs, rng) -> reward
         :param model_class: str, indicates the type of model being used FSVGD vs ensembles
         :param num_ensemble: int, number of ensembles
-        :param features: Sequence[int], number of features in the neural network
-        :param non_linearity: Callable, nonlinear activation function
+        :param hidden_dim: int, width of each hidden layer (networks.MLP)
+        :param num_layers: int, number of hidden layers (networks.MLP)
+        :param activation: str, name of an flax.nnx activation, e.g. "swish"
         :param lr: float, learning rate for the model training
         :param weight_decay: float, weight decay for the model training
         :param sig_min: float, minimal aleatoric std
@@ -99,17 +98,15 @@ class BayesianDynamicsModel(DynamicsModel):
         else:
             assert False, "Model class must be ProbabilisticEnsembleModel or fSVGDEnsemble."
 
-        obs_dim = np.prod(observation_space.shape)
-        act_dim = np.prod(action_space.shape)
-        sample_obs = observation_space.sample()
-        sample_act = action_space.sample()
-        obs_action = jnp.concatenate([sample_obs, sample_act], axis=-1)
+        obs_dim = int(obs_dim)
+        act_dim = int(act_dim)
         self.model = model_cls(
-            example_input=obs_action,
-            num_ensemble=num_ensemble,
-            features=features,
+            input_dim=obs_dim + act_dim,
             output_dim=obs_dim,
-            non_linearity=non_linearity,
+            num_ensemble=num_ensemble,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            activation=activation,
             lr=lr,
             weight_decay=weight_decay,
             seed=seed,
@@ -401,6 +398,13 @@ class BayesianDynamicsModel(DynamicsModel):
 
         return new_model_params, new_model_opt_state, alpha, summary
 
+    def init_params(self, key: jax.Array) -> PyTree:
+        """Fresh ensemble parameters for one seed; vmap over keys for a batch of seeds."""
+        return self.model.init_params(key)
+
+    def init_opt_state(self, params: PyTree) -> PyTree:
+        return self.model.init_opt_state(params)
+
     @property
     def model_params(self) -> PyTree:
         return self.model.particles
@@ -415,7 +419,7 @@ class BayesianDynamicsModel(DynamicsModel):
 
     @property
     def init_model_opt_state(self) -> PyTree:
-        return self.model.init_opt_state
+        return self.model.init_optimizer_state
 
     def update_model(self, model_params: PyTree, model_opt_state: PyTree, alpha: Union[chex.Array, float], model_props):
         self.model_props = super().update_model(alpha, model_props)
@@ -449,60 +453,4 @@ class BayesianDynamicsModel(DynamicsModel):
         )
         reward = reward_fn(obs, action, next_obs, reward_rng)
         return next_obs, reward
-    
-    def _get_mae_ground_truth_fn(self, env_name: str):
-        """Builds (once per env_name) and caches a single jitted function that
-        samples a validation batch and computes its ground-truth delta_obs/
-        reward/terminated in one vmapped pass over `true_transition`.
-
-        Previously `get_dynamics_mae` rebuilt the gymnax env and three
-        separate, uncached `jax.vmap(lambda ...)` wrappers (one each for
-        delta_obs/reward/terminated, each independently recomputing
-        `true_transition`/`env.step`) on every call. Since `get_dynamics_mae`
-        is now called every training iteration, that meant a fresh trace-and
-        -compile (times three) per call. Caching one combined jitted function
-        on `self`, keyed by env_name, avoids both the redundant recomputation
-        and the repeated recompilation.
-        """
-        cache = getattr(self, "_mae_ground_truth_cache", None)
-        if cache is not None and cache[0] == env_name:
-            return cache[1]
-        if env_name == "NoisyMC-v0":
-            env, env_params = gymnax.make("MountainCar-v0")
-        else:
-            env, env_params = gymnax.make(env_name)
-
-        def ground_truth_batch(rng):
-            _, obs, s1, s2, act = sample_validation_batch(rng, env, env_params, env_name, 1000)
-            delta_obs, reward, terminated = jax.vmap(
-                lambda x1, x2, a: true_transition(env, env_params, env_name, x1, x2, a)
-            )(s1, s2, act[:, 0])
-            return obs, act, delta_obs, reward, terminated
-
-        ground_truth_batch = jax.jit(ground_truth_batch)
-        self._mae_ground_truth_cache = (env_name, ground_truth_batch)
-        return ground_truth_batch
-
-    def get_dynamics_mae(self, rng, env_name="Pendulum-v1"):
-        ground_truth_batch = self._get_mae_ground_truth_fn(env_name)
-        val_obs, val_act, true_delta_obs, true_reward, true_terminated = ground_truth_batch(rng)
-        #these Transition objects are only used in the predict_raw method and therefore don't need
-        #reward, next_obs, or dones, fill those with zeros
-        random_transitions = Transition(val_obs, val_act,
-                                        jnp.zeros_like(val_obs),
-                                        jnp.zeros_like(val_obs),
-                                        jnp.zeros_like(val_obs, dtype=jnp.bool_))
-
-        mean_next_obs, std_next_obs = self.predict_raw(parameters=self.model_params,
-                                                       tran=random_transitions,
-                                                       model_props=self.model_props
-                                                       )
-        #predict_raw gives the prediction of the next state, turn that into a delta
-        mean_delta_next_obs = mean_next_obs - val_obs
-        #get mean of dynamics error over dimensions and return it as a dictionary for wandb
-        dynamics_mae = jnp.mean(jnp.abs(true_delta_obs - mean_delta_next_obs))
-        prediction_uncertainty = jnp.mean(std_next_obs)
-        return {"dynamics_mae": dynamics_mae, "predicted_uncertainty": prediction_uncertainty}
-        
-
         

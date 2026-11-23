@@ -3,9 +3,9 @@ from typing import Sequence, Callable, Union, NamedTuple, Dict, Optional
 
 import chex
 import jax.numpy as jnp
-from flax import linen as nn
+from flax import nnx
 from jax import jit, vmap, value_and_grad
-from opax.utils.network_utils import MLP
+from networks import MLP
 import jax
 from opax.utils.utils import gaussian_log_likelihood, rbf_kernel
 import optax
@@ -48,7 +48,7 @@ def _predict(apply_fn: Callable, params: PyTree, x: chex.Array, sig_max: Union[c
     forward = jax.vmap(apply_fn, (0, None))
     predictions = forward(params, x)
     mu, sig = jnp.split(predictions, 2, axis=-1)
-    sig = nn.softplus(sig)
+    sig = jax.nn.softplus(sig)
     sig = jnp.clip(sig, 0, sig_max) + sig_min
     eps = jnp.ones_like(sig) * sig_min
     sig = (1 - deterministic) * sig + deterministic * eps
@@ -59,11 +59,12 @@ def _predict(apply_fn: Callable, params: PyTree, x: chex.Array, sig_max: Union[c
 class ProbabilisticEnsembleModel(object):
     def __init__(
             self,
-            example_input: jnp.ndarray,
-            num_ensemble: int = 10,
-            features: Sequence[int] = (256, 256),
+            input_dim: int,
             output_dim: int = 1,
-            non_linearity: Callable = nn.swish,
+            num_ensemble: int = 10,
+            hidden_dim: int = 256,
+            num_layers: int = 2,
+            activation: str = "swish",
             lr: float = 1e-3,
             weight_decay: float = 1e-4,
             seed: int = 0,
@@ -72,31 +73,40 @@ class ProbabilisticEnsembleModel(object):
             deterministic: bool = False,
             initialize_train_fn: bool = True,
     ):
+        self.input_dim = input_dim
         self.output_dim = output_dim
-        self.mlp = MLP(
-            features=features,
-            output_dim=2 * output_dim,
-            non_linearity=non_linearity
-        )
         self.num_ensembles = num_ensemble
-        # vmap init function with respect to seed sequence
-        init = vmap(self.mlp.init, (0, None))
-        self.net = self.mlp.apply
-        self.rng = jax.random.PRNGKey(seed)
-        seed_sequence = jax.random.split(self.rng, self.num_ensembles + 1)
-        self.rng = seed_sequence[0]
-        seed_sequence = seed_sequence[1:]
-        particles = init(seed_sequence, example_input)
+
+        # One ensemble member is a networks.MLP with a (mean, raw sigma) head. The rest
+        # of OPAX is functional, so the module is split once into a static graphdef and
+        # parameters are passed around as an nnx.State pytree with a leading
+        # (num_ensembles,) axis.
+        def make_mlp(key: jax.Array) -> MLP:
+            return MLP(
+                input_dim,
+                hidden_dim,
+                2 * output_dim,
+                rngs=nnx.Rngs(params=key),
+                num_layers=num_layers,
+                activation=activation,
+            )
+
+        self._make_mlp = make_mlp
+        self.graphdef, _ = nnx.split(nnx.eval_shape(lambda: make_mlp(jax.random.key(0))))
+        self.net = lambda params, x: nnx.merge(self.graphdef, params)(x)[0]
         self.sig_min = sig_min
         self.sig_max = sig_max
         self.optimizer = optax.adamw(learning_rate=lr,
                                      weight_decay=weight_decay)
-        optimizer_state = self.optimizer.init(particles)
+        # Legacy stateful attributes seeded from `seed`. Functional callers (OpaxAgent)
+        # use init_params(key) / init_opt_state(params) and ignore these.
+        self.rng, init_key = jax.random.split(jax.random.PRNGKey(seed))
+        particles = self.init_params(init_key)
+        optimizer_state = self.init_opt_state(particles)
         self.particles = particles
         self.opt_state = optimizer_state
         self.init_particles = particles
-        self.init_opt_state = optimizer_state
-        self.example_input = example_input
+        self.init_optimizer_state = optimizer_state
         self._predict = jit(lambda params, x:
                             _predict(
                                 apply_fn=self.net,
@@ -155,6 +165,18 @@ class ProbabilisticEnsembleModel(object):
             )
 
         self.calculate_calibration_alpha = jax.jit(calculate_calibration_alpha)
+
+    def _init_ensemble(self, key: jax.Array, num_members: int) -> PyTree:
+        keys = jax.random.split(key, num_members)
+        return nnx.split(nnx.vmap(self._make_mlp)(keys))[1]
+
+    def init_params(self, key: jax.Array) -> PyTree:
+        """Fresh ensemble parameters, leading axis (num_ensembles,). Pure; vmappable over key."""
+        return self._init_ensemble(key, self.num_ensembles)
+
+    def init_opt_state(self, params: PyTree) -> PyTree:
+        """Optimizer state for `params`. Pure; vmappable over params."""
+        return self.optimizer.init(params)
 
     @property
     def params(self) -> PyTree:
@@ -226,11 +248,8 @@ class FSVGDEnsemble(ProbabilisticEnsembleModel):
                  *args, **kwargs):
         super(FSVGDEnsemble, self).__init__(*args, **kwargs, initialize_train_fn=False)
         n_prior_particles = n_prior_particles or self.num_ensembles
-        init = vmap(self.mlp.init, (0, None))
-        seed_sequence = jax.random.split(self.rng, n_prior_particles + 1)
-        self.rng = seed_sequence[0]
-        seed_sequence = seed_sequence[1:]
-        self.priors = init(seed_sequence, self.example_input)
+        self.rng, prior_key = jax.random.split(self.rng)
+        self.priors = self._init_ensemble(prior_key, n_prior_particles)
         self.prior_bandwidth = prior_bandwidth
         self.k_bandwidth = k_bandwidth
 
