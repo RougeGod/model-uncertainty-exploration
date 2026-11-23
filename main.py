@@ -106,7 +106,9 @@ def run_online(
 
         return jax.tree_util.tree_map(jax.vmap(append_one), buffer, batch)
 
-    batched_eval = evaluation.make_batched_evaluate_policy(eval_config, env)
+    batched_eval = evaluation.make_batched_evaluate_policy(
+        eval_config, env, rollout_factory
+    )
     key, eval_keys = vsplit(key)
     log_eval(
         loggers, batched_eval, agent.eval_policy(agent_state), env_params, eval_keys, 0
@@ -371,7 +373,8 @@ def main(args: Args):
         }
         eval_config = {
             **rollout_config,
-            "NUM_ENVS": 100,
+            # MPC eval plans at every step of every env, so OPAX uses fewer envs.
+            "NUM_ENVS": args.opax.eval_envs if is_opax else 100,
             "NUM_STEPS": single_env_params.max_steps_in_episode,
         }
         hparams_extra = {"rollout": rollout_config, "eval": eval_config}
@@ -383,7 +386,15 @@ def main(args: Args):
     )
     os.makedirs(log_dir, exist_ok=True)
     with open(os.path.join(log_dir, "config.json"), "w") as _f:
-        json.dump({"env": args.env, "model": args.model.name, "label": args.label}, _f)
+        json.dump(
+            {
+                "env": args.env,
+                "agent": args.agent,
+                "model": args.model.name,
+                "label": args.label,
+            },
+            _f,
+        )
 
     seed_dirs, loggers = [], []
     for b in range(B):
