@@ -13,7 +13,7 @@ import pytest
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 import main
-from config import Args, BLRConfig, ENNConfig, PPOConfig, RNDConfig
+from config import Args, BLRConfig, ENNConfig, OpaxConfig, PPOConfig, RNDConfig
 from offline_data import AREA_INDEX
 from ppo import Transition
 
@@ -106,7 +106,7 @@ CASES = {
     ),
     "model-free-cartpole": Args(
         env="CartPole-v1",
-        model_free=True,
+        agent="model-free",
         max_steps=100,
         steps_per_rollout=50,
         ppo=TINY_PPO,
@@ -124,7 +124,7 @@ CASES = {
     ),
     "model-free-deepsea": Args(
         env="DeepSea-5",
-        model_free=True,
+        agent="model-free",
         num_seeds=2,
         max_steps=50,
         steps_per_rollout=10,
