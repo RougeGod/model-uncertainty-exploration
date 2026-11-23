@@ -14,7 +14,7 @@ from gymnax.environments import spaces
 import evaluation
 import plotting
 import validation
-from agents import Experience, ModelBasedAgent, ModelFreeAgent
+from agents import Experience, ModelBasedAgent, ModelFreeAgent, OpaxAgent
 from batching import seed_slice, vsplit
 from config import Args, model_config_dict, ppo_config_dict
 from data import collate_rollout
@@ -73,8 +73,12 @@ def run_online(
 
         _init_obs_stats(agent.explore_policy(agent_state), obsv)
 
+    # Agents that do not act through a PPO policy (OPAX's MPC planner) supply their own
+    # rollout with the same contract; everyone else uses PPO's.
+    rollout_factory = getattr(agent, "make_rollout", make_rollout)
+
     def rollout(runner_state, params):
-        return make_rollout(rollout_config, env, params, training=agent.on_policy)(
+        return rollout_factory(rollout_config, env, params, training=agent.on_policy)(
             runner_state
         )
 
