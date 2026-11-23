@@ -1,13 +1,14 @@
-from typing import Optional, Callable, Union
+from collections.abc import Callable
 
 import chex
 import jax
 import jax.numpy as jnp
-from opax.utils.utils import sample_normal_dist
-from opax.utils.replay_buffer import Transition
-from opax.models.bayesian_dynamics_model import BayesianDynamicsModel
-from opax.utils.type_aliases import ModelProperties
 from jaxtyping import PyTree
+
+from opax.models.bayesian_dynamics_model import BayesianDynamicsModel
+from opax.utils.replay_buffer import Transition
+from opax.utils.type_aliases import ModelProperties, default_model_properties
+from opax.utils.utils import sample_normal_dist
 
 
 @jax.jit
@@ -39,7 +40,7 @@ class HUCRLModel(BayesianDynamicsModel):
                  **kwargs
                  ):
 
-        super(HUCRLModel, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.beta = beta
         self._init_fn()
 
@@ -51,8 +52,8 @@ class HUCRLModel(BayesianDynamicsModel):
                     obs,
                     action,
                     rng,
-                    model_props: ModelProperties = ModelProperties(),
-                    sampling_idx: Optional[int] = None,
+                    model_props: ModelProperties = default_model_properties,
+                    sampling_idx: int | None = None,
                     ):
             return self._predict(
                 predict_fn=self.model._predict,
@@ -75,8 +76,8 @@ class HUCRLModel(BayesianDynamicsModel):
                               obs,
                               action,
                               rng,
-                              model_props: ModelProperties = ModelProperties(),
-                              sampling_idx: Optional[int] = None,
+                              model_props: ModelProperties = default_model_properties,
+                              sampling_idx: int | None = None,
                               ):
             return self._predict(
                 predict_fn=self.model._predict,
@@ -100,8 +101,8 @@ class HUCRLModel(BayesianDynamicsModel):
                 obs,
                 action,
                 rng,
-                model_props: ModelProperties = ModelProperties(),
-                sampling_idx: Optional[int] = None,
+                model_props: ModelProperties = default_model_properties,
+                sampling_idx: int | None = None,
         ):
             return self._evaluate(
                 pred_fn=self.predict,
@@ -122,8 +123,8 @@ class HUCRLModel(BayesianDynamicsModel):
                 obs,
                 action,
                 rng,
-                model_props: ModelProperties = ModelProperties(),
-                sampling_idx: Optional[int] = None,
+                model_props: ModelProperties = default_model_properties,
+                sampling_idx: int | None = None,
         ):
             return self._evaluate(
                 pred_fn=self.predict_with_mean,
@@ -143,7 +144,7 @@ class HUCRLModel(BayesianDynamicsModel):
                 tran: Transition,
                 model_params,
                 model_opt_state,
-                val: Optional[Transition] = None,
+                val: Transition | None = None,
                 *args,
                 **kwargs,
         ):
@@ -168,10 +169,10 @@ class HUCRLModel(BayesianDynamicsModel):
                  rng: jax.Array,
                  num_ensembles: int,
                  beta: float,
-                 model_props: ModelProperties = ModelProperties(),
+                 model_props: ModelProperties = default_model_properties,
                  pred_diff: bool = 1,
                  use_optimism: bool = 1,
-                 sampling_idx: Optional[int] = None,
+                 sampling_idx: int | None = None,
                  ):
         """predict with optimism."""
         alpha = model_props.alpha
@@ -227,8 +228,8 @@ class HUCRLModel(BayesianDynamicsModel):
             obs: chex.Array,
             action: chex.Array,
             rng: jax.Array,
-            model_props: ModelProperties = ModelProperties(),
-            sampling_idx: Optional[int] = None,
+            model_props: ModelProperties = default_model_properties,
+            sampling_idx: int | None = None,
     ):
         """Predict next state with optimism and obtain the next reward."""
         model_rng = None

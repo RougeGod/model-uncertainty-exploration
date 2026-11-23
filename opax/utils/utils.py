@@ -1,13 +1,19 @@
-import chex
-import jax.numpy as jnp
-import optax
-from jax import jit
-import jax
+from collections.abc import Callable
 from functools import partial
-from opax.utils.type_aliases import ModelProperties, PolicyProperties
-from opax.utils.replay_buffer import Transition
-from typing import Optional, Union, Callable
+
+import chex
+import jax
+import jax.numpy as jnp
+from jax import jit
 from jaxtyping import PyTree
+
+from opax.utils.replay_buffer import Transition
+from opax.utils.type_aliases import (
+    ModelProperties,
+    PolicyProperties,
+    default_model_properties,
+    default_policy_properties,
+)
 
 EPS = 1e-6
 
@@ -27,7 +33,7 @@ def sample_normal_dist(mu: chex.Array, sig: chex.Array, rng: jax.Array):
 
 
 @jit
-def rbf_kernel(x: chex.Array, y: chex.Array, bandwidth: Optional[float] = None):
+def rbf_kernel(x: chex.Array, y: chex.Array, bandwidth: float | None = None):
     square_sum = lambda x, y: jnp.sum(jnp.square(x - y))
     pairwise = jax.vmap(lambda y: jax.vmap(lambda x: square_sum(x, y), in_axes=0, out_axes=0)(x))(y)
     n_x = x.shape[-2]
@@ -111,17 +117,18 @@ def sample_trajectories(
         parameters: PyTree,
         init_state: jnp.ndarray,
         horizon: int,
-        key: Optional[jax.random.PRNGKey],
-        policy: Optional[Callable] = None,
+        key: jax.Array | None,
+        policy: Callable | None = None,
         actor_params=None,
-        actions: Optional[jnp.ndarray] = None,
-        model_props: ModelProperties = ModelProperties(),
-        sampling_idx: Optional[Union[jnp.ndarray, int]] = None,
-        policy_props: PolicyProperties = PolicyProperties(),
+        actions: jnp.ndarray | None = None,
+        model_props: ModelProperties=default_model_properties,
+        sampling_idx: jnp.ndarray | int | None = None,
+        policy_props: PolicyProperties=default_policy_properties,
         stop_grads: bool = True,
         # observations: Optional[jnp.ndarray] = None
 ) -> Transition:
     """
+    Generates a batch of simulated trajectories
     """
     assert policy is not None or actions is not None, \
         'Please provide policy or actor'
@@ -204,7 +211,7 @@ def sample_trajectories(
     )
     return transitions
     # outs = jax.tree_map(lambda x: x.swapaxes(0, 1), outs)
-    # return tuple(outs)  # noqa
+    # return tuple(outs)
 
 
 def tree_stack(trees: PyTree, axis=0):

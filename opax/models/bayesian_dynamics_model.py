@@ -1,16 +1,16 @@
-from typing import Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 import chex
-from opax.utils.models import FSVGDEnsemble, ProbabilisticEnsembleModel
 import jax
 import jax.numpy as jnp
-from opax.utils.utils import sample_normal_dist
-from opax.utils.replay_buffer import Transition
-from opax.models.dynamics_model import DynamicsModel, ModelSummary
-from opax.utils.type_aliases import ModelProperties
-from typing import Any, List, Union
-from opax.utils.utils import gaussian_log_likelihood
 from jaxtyping import PyTree
+
+from opax.models.dynamics_model import DynamicsModel, ModelSummary
+from opax.utils.models import FSVGDEnsemble, ProbabilisticEnsembleModel
+from opax.utils.replay_buffer import Transition
+from opax.utils.type_aliases import ModelProperties, default_model_properties
+from opax.utils.utils import gaussian_log_likelihood, sample_normal_dist
 
 
 def mse(y: chex.Array, pred: chex.Array) -> chex.Array:
@@ -18,8 +18,8 @@ def mse(y: chex.Array, pred: chex.Array) -> chex.Array:
 
 class SamplingType:
     name: str = 'TS1'
-    name_types: List[str] = \
-        ['All', 'DS', 'TS1', 'TSInf', 'mean']
+    name_types: tuple[str] = \
+        ('All', 'DS', 'TS1', 'TSInf', 'mean')
 
     def set_type(self, name):
         assert name in self.name_types, \
@@ -89,7 +89,7 @@ class BayesianDynamicsModel(DynamicsModel):
         :param kwargs:
         """
 
-        super(BayesianDynamicsModel, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.reward_model = reward_model
         if model_class == "ProbabilisticEnsembleModel":
             model_cls = ProbabilisticEnsembleModel
@@ -128,7 +128,7 @@ class BayesianDynamicsModel(DynamicsModel):
                     action,
                     rng,
                     sampling_idx=self.sampling_idx,
-                    model_props: ModelProperties = ModelProperties(),
+                    model_props: ModelProperties = default_model_properties,
                     ):
             return self._predict(
                 predict_fn=self.model._predict,
@@ -151,7 +151,7 @@ class BayesianDynamicsModel(DynamicsModel):
                 action,
                 rng,
                 sampling_idx=self.sampling_idx,
-                model_props: ModelProperties = ModelProperties(),
+                model_props: ModelProperties = default_model_properties,
         ):
             return self._evaluate(
                 pred_fn=self.predict,
@@ -170,7 +170,7 @@ class BayesianDynamicsModel(DynamicsModel):
                 tran: Transition,
                 model_params,
                 model_opt_state,
-                val: Optional[Transition] = None,
+                val: Transition | None = None,
                 *args,
                 **kwargs,
         ):
@@ -189,7 +189,7 @@ class BayesianDynamicsModel(DynamicsModel):
         def _predict_raw(
                 parameters,
                 tran: Transition,
-                model_props: ModelProperties = ModelProperties(),
+                model_props: ModelProperties = default_model_properties,
         ):
             return self._predict_raw(
                 predict_fn=self.model._predict,
@@ -216,7 +216,7 @@ class BayesianDynamicsModel(DynamicsModel):
             predict_fn: Callable,
             parameters: PyTree,
             tran: Transition,
-            model_props: ModelProperties = ModelProperties(),
+            model_props: ModelProperties = default_model_properties,
             pred_diff: bool = 1,
     ) -> [chex.Array, chex.Array]:
         """
@@ -229,7 +229,6 @@ class BayesianDynamicsModel(DynamicsModel):
         :output next_obs_mean: chex.Array -> mean prediction of each ensemble member
         :output next_obs_std: chex.Array -> std prediction of each ensemble member
         """
-        alpha = model_props.alpha
         bias_obs = model_props.bias_obs
         bias_act = model_props.bias_act
         bias_out = model_props.bias_out
@@ -260,7 +259,7 @@ class BayesianDynamicsModel(DynamicsModel):
                  sampling_type: SamplingType,
                  num_ensembles: int,
                  sampling_idx: chex.Array,
-                 model_props: ModelProperties = ModelProperties(),
+                 model_props: ModelProperties = default_model_properties,
                  pred_diff: bool = True,
                  ):
         """
@@ -278,7 +277,6 @@ class BayesianDynamicsModel(DynamicsModel):
         """
 
         # normalize and predict the next state distribution with each ensemble
-        alpha = model_props.alpha
         bias_obs = model_props.bias_obs
         bias_act = model_props.bias_act
         bias_out = model_props.bias_out
@@ -348,7 +346,7 @@ class BayesianDynamicsModel(DynamicsModel):
 
     @staticmethod
     def _train(train_fn: Callable, predict_fn: Callable, calibrate_fn: Callable, tran: Transition,
-               model_params: PyTree, model_opt_state: PyTree, val: Optional[Transition] = None) -> \
+               model_params: PyTree, model_opt_state: PyTree, val: Transition | None = None) -> \
             [PyTree, PyTree, chex.Array, ModelSummary]:
         """Train dynamics model and validate"""
         alpha = jnp.ones(tran.obs.shape[-1])
@@ -421,7 +419,7 @@ class BayesianDynamicsModel(DynamicsModel):
     def init_model_opt_state(self) -> PyTree:
         return self.model.init_optimizer_state
 
-    def update_model(self, model_params: PyTree, model_opt_state: PyTree, alpha: Union[chex.Array, float], model_props):
+    def update_model(self, model_params: PyTree, model_opt_state: PyTree, alpha: chex.Array | float, model_props):
         self.model_props = super().update_model(alpha, model_props)
         self.model.particles = model_params
         self.model.opt_state = model_opt_state
@@ -435,7 +433,7 @@ class BayesianDynamicsModel(DynamicsModel):
             action: chex.Array,
             rng: jax.Array,
             sampling_idx: chex.Array,
-            model_props: ModelProperties = ModelProperties()
+            model_props: ModelProperties = default_model_properties
     ) -> [chex.Array, chex.Array]:
         """Predict the next state and reward."""
         model_rng = None

@@ -20,7 +20,7 @@ from opax.models.dynamics_model import ModelSummary
 from opax.optimizers.dummy_policy_optimizer import BestSequences
 from opax.optimizers.icem_trajectory_optimizer import ICemTO
 from opax.utils.replay_buffer import Transition as OpaxTransition
-from opax.utils.type_aliases import ModelProperties
+from opax.utils.type_aliases import ModelProperties, default_model_properties
 from ppo import Transition
 
 # Floor on the OPAX normalizer's std (constant dims, e.g. before data varies).
@@ -164,7 +164,7 @@ class SnappedHUCRLModel(ActiveLearningHUCRLModel):
             obs,
             action,
             rng,
-            model_props: ModelProperties = ModelProperties(),
+            model_props: ModelProperties = default_model_properties,
             sampling_idx=None,
         ):
             return evaluate(
@@ -181,7 +181,7 @@ class SnappedHUCRLModel(ActiveLearningHUCRLModel):
             obs,
             action,
             rng,
-            model_props: ModelProperties = ModelProperties(),
+            model_props: ModelProperties = default_model_properties,
             sampling_idx=None,
         ):
             return evaluate_for_exploration(

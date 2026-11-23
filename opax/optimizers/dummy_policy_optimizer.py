@@ -8,7 +8,7 @@ class BestSequences:
     exploration_sequence: jax.Array
 
 
-class DummyPolicyOptimizer(object):
+class DummyPolicyOptimizer:
 
     def __init__(self, *args, **kwargs):
         return

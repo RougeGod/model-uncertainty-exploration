@@ -1,18 +1,21 @@
 """Generate colored noise. Taken from: https://github.com/felixpatzelt/colorednoise/blob/master/colorednoise.py"""
+from collections.abc import Callable
+from functools import partial
+from typing import NamedTuple, Optional
+
 import chex
-import numpy as np
-from jax.numpy import sqrt, newaxis
-from jax.numpy.fft import irfft, rfftfreq
 import jax
 import jax.numpy as jnp
-from functools import partial
-from typing import Callable, Union, Optional, NamedTuple
-from numpy.random import default_rng, Generator, RandomState
-from numpy import integer
-from opax.optimizers.dummy_policy_optimizer import DummyPolicyOptimizer, BestSequences
-from opax.utils.type_aliases import ModelProperties
-from opax.utils.utils import sample_trajectories
+import numpy as np
+from jax.numpy import newaxis, sqrt
+from jax.numpy.fft import irfft, rfftfreq
 from jaxtyping import PyTree
+from numpy import integer
+from numpy.random import Generator, RandomState, default_rng
+
+from opax.optimizers.dummy_policy_optimizer import BestSequences, DummyPolicyOptimizer
+from opax.utils.type_aliases import ModelProperties, default_model_properties
+from opax.utils.utils import sample_trajectories
 
 
 @partial(jax.jit, static_argnums=(0, 1, 3))
@@ -196,9 +199,9 @@ def powerlaw_psd_gaussian_numpy(exponent: float, size: int, fmin: float = 0, ran
     # generate 1/f noise == pink noise == flicker noise
 
     """
-    from numpy import sqrt, newaxis
-    from numpy.fft import irfft, rfftfreq
+    from numpy import newaxis, sqrt
     from numpy import sum as npsum
+    from numpy.fft import irfft, rfftfreq
 
     # Make sure size is a list so we can iterate it and assign to it.
     try:
@@ -356,11 +359,11 @@ class ICemTO(DummyPolicyOptimizer):
             evaluate_fn: Callable,
             initial_state: jax.Array,
             dynamics_params,
-            model_props: ModelProperties = ModelProperties(),
-            initial_actions: Optional[jax.Array] = None,
+            model_props: ModelProperties = default_model_properties,
+            initial_actions: jax.Array | None = None,
             key: Optional = None,
             optimizer_key: Optional = None,
-            sampling_idx: Optional[Union[jnp.ndarray, int]] = None,
+            sampling_idx: jnp.ndarray | int | None = None,
     ) -> [chex.Array, chex.Array]:
         initial_state = jnp.repeat(jnp.expand_dims(initial_state, 0), self.n_particles, 0)
         eval_func = lambda seq, x, k: sample_trajectories(
@@ -460,9 +463,9 @@ class ICemTO(DummyPolicyOptimizer):
             best_sequences: BestSequences,
             key: jax.Array = None,
             optimizer_key: jax.Array = None,
-            model_props: ModelProperties = ModelProperties(),
-            initial_actions: Optional[jax.Array] = None,
-            sampling_idx: Optional[Union[jnp.ndarray, int]] = None,
+            model_props: ModelProperties = default_model_properties,
+            initial_actions: jax.Array | None = None,
+            sampling_idx: jnp.ndarray | int | None = None,
     ):
         """Pure: takes the current iCEM warm-start state in and returns the
         updated state out, instead of mutating ``self.best_sequences``.
@@ -505,9 +508,9 @@ class ICemTO(DummyPolicyOptimizer):
             best_sequences: BestSequences,
             key=None,
             optimizer_key=None,
-            model_props: ModelProperties = ModelProperties(),
-            initial_actions: Optional[jax.Array] = None,
-            sampling_idx: Optional[Union[jnp.ndarray, int]] = None,
+            model_props: ModelProperties = default_model_properties,
+            initial_actions: jax.Array | None = None,
+            sampling_idx: jnp.ndarray | int | None = None,
     ):
         """Pure counterpart to ``_get_action_sequence`` above — same reason:
         no ``self`` mutation, warm-start state threaded explicitly."""

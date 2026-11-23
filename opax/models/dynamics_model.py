@@ -1,14 +1,13 @@
-import chex
-import jax.random
 
-from opax.utils.replay_buffer import Transition
-from typing import Optional, Union
-from flax import struct
+import chex
 import jax.numpy as jnp
-from opax.utils.utils import convert_to_jax
-from opax.utils.type_aliases import ModelProperties
-from opax.utils.replay_buffer import ReplayBuffer
+import jax.random
+from flax import struct
 from jaxtyping import PyTree
+
+from opax.utils.replay_buffer import ReplayBuffer, Transition
+from opax.utils.type_aliases import ModelProperties, default_model_properties
+from opax.utils.utils import convert_to_jax
 
 
 @struct.dataclass
@@ -35,9 +34,9 @@ class ModelSummary:
         }
 
 
-class DynamicsModel(object):
+class DynamicsModel:
     def __init__(self,
-                 model_props: ModelProperties = ModelProperties(),
+                 model_props: ModelProperties = default_model_properties,
                  pred_diff: bool = True,
                  *args,
                  **kwargs
@@ -48,18 +47,17 @@ class DynamicsModel(object):
         # this function only changes when doing active exploration where the opax objective is used.
         # evaluate uses the true reward function
         self.evaluate_for_exploration = self.evaluate
-        pass
 
     def _init_fn(self):
         pass
 
-    def predict(self, obs: chex.Array, action: chex.Array, rng: Optional[jax.Array] = None):
+    def predict(self, obs: chex.Array, action: chex.Array, rng: jax.Array | None = None):
         pass
 
     def predict_raw(self,
                     parameters: PyTree,
                     tran: Transition,
-                    model_props: ModelProperties = ModelProperties()
+                    model_props: ModelProperties = default_model_properties
                     ):
         pass
 
@@ -68,8 +66,8 @@ class DynamicsModel(object):
                  obs: chex.Array,
                  action: chex.Array,
                  rng: jax.Array,
-                 sampling_idx: Optional[chex.Array] = None,
-                 model_props: ModelProperties = ModelProperties()
+                 sampling_idx: chex.Array | None = None,
+                 model_props: ModelProperties = default_model_properties
                  ):
         pass
 
@@ -77,7 +75,7 @@ class DynamicsModel(object):
                     tran: Transition,
                     model_params: PyTree = None,
                     model_opt_state: PyTree = None,
-                    val: Optional[Transition] = None,
+                    val: Transition | None = None,
                     *args,
                     **kwargs):
         return None, None, None, ModelSummary()
@@ -100,7 +98,7 @@ class DynamicsModel(object):
 
     @staticmethod
     @jax.jit
-    def update_model(alpha: Union[float, chex.Array],
+    def update_model(alpha: float | chex.Array,
                      model_props: ModelProperties) -> ModelProperties:
         # update model params and properties
         alpha = convert_to_jax(alpha)
@@ -122,12 +120,12 @@ class DynamicsModel(object):
         return new_model_props
 
     def set_transforms(self,
-                       bias_obs: Union[jnp.ndarray, float] = 0.0,
-                       bias_act: Union[jnp.ndarray, float] = 0.0,
-                       bias_out: Union[jnp.ndarray, float] = 0.0,
-                       scale_obs: Union[jnp.ndarray, float] = 1.0,
-                       scale_act: Union[jnp.ndarray, float] = 1.0,
-                       scale_out: Union[jnp.ndarray, float] = 1.0,
+                       bias_obs: jnp.ndarray | float = 0.0,
+                       bias_act: jnp.ndarray | float = 0.0,
+                       bias_out: jnp.ndarray | float = 0.0,
+                       scale_obs: jnp.ndarray | float = 1.0,
+                       scale_act: jnp.ndarray | float = 1.0,
+                       scale_out: jnp.ndarray | float = 1.0,
                        ):
         # update transformations for the model
         alpha = self.model_props.alpha

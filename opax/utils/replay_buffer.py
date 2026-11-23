@@ -1,35 +1,34 @@
 import functools
+from copy import deepcopy
 
 import chex
-import jax.numpy as jnp
 import jax
-from flax import struct
+import jax.numpy as jnp
 import numpy as np
-from typing import Union, Tuple, Optional
-from copy import deepcopy
+from flax import struct
 
 EPS = 1e-8
 
 
-def identity_transform(obs: chex.Array, action: Optional[chex.Array] = None, next_state: Optional[chex.Array] = None) \
-        -> [chex.Array, Optional[chex.Array], Optional[chex.Array]]:
+def identity_transform(obs: chex.Array, action: chex.Array | None = None, next_state: chex.Array | None = None) \
+        -> [chex.Array, chex.Array | None, chex.Array | None]:
     return obs, action, next_state
 
 
-def inverse_identitiy_transform(transformed_obs: chex.Array, transformed_action: Optional[chex.Array] = None,
-                                transformed_next_state: Optional[chex.Array] = None) -> [chex.Array,
-                                                                                         Optional[chex.Array],
-                                                                                         Optional[chex.Array]]:
+def inverse_identitiy_transform(transformed_obs: chex.Array, transformed_action: chex.Array | None = None,
+                                transformed_next_state: chex.Array | None = None) -> [chex.Array,
+                                                                                         chex.Array | None,
+                                                                                         chex.Array | None]:
     return identity_transform(transformed_obs, transformed_action, transformed_next_state)
 
 
 @struct.dataclass
 class Transition:
-    obs: Union[np.ndarray, jnp.ndarray]
-    action: Union[np.ndarray, jnp.ndarray]
-    next_obs: Union[np.ndarray, jnp.ndarray]
-    reward: Union[np.ndarray, jnp.ndarray]
-    done: Union[np.ndarray, jnp.ndarray]
+    obs: np.ndarray | jnp.ndarray
+    action: np.ndarray | jnp.ndarray
+    next_obs: np.ndarray | jnp.ndarray
+    reward: np.ndarray | jnp.ndarray
+    done: np.ndarray | jnp.ndarray
 
     @property
     def shape(self):
@@ -99,8 +98,8 @@ def transition_to_jax(tran: Transition):
     )
 
 
-class Normalizer(object):
-    def __init__(self, input_shape: Tuple):
+class Normalizer:
+    def __init__(self, input_shape: tuple):
         self.mean = np.zeros(*input_shape)
         self.std = np.ones(*input_shape)
         self.size = 0
@@ -130,10 +129,10 @@ class Normalizer(object):
         return x * self.std + self.mean
 
 
-class ReplayBuffer(object):
+class ReplayBuffer:
     def __init__(self,
-                 obs_shape: Tuple,
-                 action_shape: Tuple,
+                 obs_shape: tuple,
+                 action_shape: tuple,
                  max_size: int = int(1e6),
                  normalize: bool = False,
                  action_normalize: bool = False,
@@ -159,7 +158,7 @@ class ReplayBuffer(object):
         end = self.current_ptr + size
         if end > self.max_size:
             idx_range = list(range(start, self.max_size))
-            idx_range += list(range(0, end - self.max_size))
+            idx_range += list(range(end - self.max_size))
         else:
             idx_range = list(range(start, end))
         self.obs[idx_range] = transition.obs
@@ -247,7 +246,7 @@ class NormalizerState:
 
 
 class JaxNormalizer:
-    def __init__(self, input_shape: Tuple):
+    def __init__(self, input_shape: tuple):
         self.input_shape = input_shape
 
     def initialize_normalizer_state(self):
@@ -300,10 +299,10 @@ class BufferState:
     current_ptr: int
 
 
-class JaxReplayBuffer(object):
+class JaxReplayBuffer:
     def __init__(self,
-                 obs_shape: Tuple,
-                 action_shape: Tuple,
+                 obs_shape: tuple,
+                 action_shape: tuple,
                  max_size: int = int(1e6),
                  normalize: bool = False,
                  action_normalize: bool = False,

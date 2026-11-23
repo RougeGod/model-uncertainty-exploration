@@ -1,21 +1,21 @@
 import functools
-from typing import Sequence, Callable, Union, NamedTuple, Dict, Optional
+from collections.abc import Callable
+from functools import partial
+from typing import NamedTuple
 
 import chex
-import jax.numpy as jnp
-from flax import nnx
-from jax import jit, vmap, value_and_grad
-from networks import MLP
 import jax
-from opax.utils.utils import gaussian_log_likelihood, rbf_kernel
+import jax.numpy as jnp
 import optax
-from jax.scipy.stats import norm
+from flax import nnx
 from gpjax import Dataset
+from jax import jit, random, value_and_grad, vmap
+from jax.scipy.stats import multivariate_normal, norm
 from jax.tree_util import register_pytree_node_class
-from jax import random
-from jax.scipy.stats import multivariate_normal
-from functools import partial
 from jaxtyping import PyTree
+
+from networks import MLP
+from opax.utils.utils import gaussian_log_likelihood, rbf_kernel
 
 EPS = 1e-6
 
@@ -41,8 +41,8 @@ def _calculate_calibration_alpha(calibration_error_fn: Callable, params: PyTree,
     return best_alpha, jnp.diag(errors[indices])
 
 
-def _predict(apply_fn: Callable, params: PyTree, x: chex.Array, sig_max: Union[chex.Array, float],
-             sig_min: Union[chex.Array, float], rng: Optional[jax.Array] = None,
+def _predict(apply_fn: Callable, params: PyTree, x: chex.Array, sig_max: chex.Array | float,
+             sig_min: chex.Array | float, rng: jax.Array | None = None,
              deterministic: bool = False) -> chex.Array:
     """Predict next mean and aleatoric std."""
     forward = jax.vmap(apply_fn, (0, None))
@@ -56,7 +56,7 @@ def _predict(apply_fn: Callable, params: PyTree, x: chex.Array, sig_max: Union[c
     return predictions
 
 
-class ProbabilisticEnsembleModel(object):
+class ProbabilisticEnsembleModel:
     def __init__(
             self,
             input_dim: int,
@@ -188,7 +188,7 @@ class ProbabilisticEnsembleModel(object):
     @staticmethod
     def _train_fn(predict_fn: Callable, update_fn: Callable, params: PyTree, opt_state: PyTree,
                   x: chex.Array, y: chex.Array,
-                  prior_particles: Optional[PyTree] = None) -> [PyTree, PyTree, chex.Array, chex.Array]:
+                  prior_particles: PyTree | None = None) -> [PyTree, PyTree, chex.Array, chex.Array]:
         likelihood = jax.vmap(gaussian_log_likelihood, in_axes=(None, 0, 0), out_axes=0)
 
         def likelihood_loss(model_params):
@@ -241,12 +241,12 @@ class ProbabilisticEnsembleModel(object):
 
 class FSVGDEnsemble(ProbabilisticEnsembleModel):
     def __init__(self,
-                 n_prior_particles: Union[int, None] = None,
-                 prior_bandwidth: float = None,
+                 n_prior_particles: int | None = None,
+                 prior_bandwidth: float | None = None,
                  k_bandwidth: float = 0.1,
                  initialize_train_fn: bool = True,
                  *args, **kwargs):
-        super(FSVGDEnsemble, self).__init__(*args, **kwargs, initialize_train_fn=False)
+        super().__init__(*args, **kwargs, initialize_train_fn=False)
         n_prior_particles = n_prior_particles or self.num_ensembles
         self.rng, prior_key = jax.random.split(self.rng)
         self.priors = self._init_ensemble(prior_key, n_prior_particles)
@@ -368,8 +368,7 @@ class FSVGDEnsemble(ProbabilisticEnsembleModel):
 
 class KDEfWGDEnsemble(FSVGDEnsemble):
     def __init__(self, *args, **kwargs):
-        super(KDEfWGDEnsemble, self).__init__(initialize_train_fn=True,
-                                              *args,
+        super().__init__(*args,initialize_train_fn=True,
                                               **kwargs)
 
     @staticmethod
@@ -445,12 +444,12 @@ def make_positive(x):
 
 
 class GPModelParameters(NamedTuple):
-    gp_parameter_state: Dict
+    gp_parameter_state: dict
     dataset: Dataset
 
 
 @register_pytree_node_class
-class GPModel(object):
+class GPModel:
     def __init__(self,
                  input_dim: int = 1,
                  output_dim: int = 1,
@@ -490,7 +489,7 @@ class GPModel(object):
 
     def initialize_parameters(self, key):
         cat_input = jnp.ones(shape=(self.input_dim,))
-        parameters = dict()
+        parameters = {}
         # Inout dimension is state_dim + action_dim, we have one lengthscale for each dimension
         # Ouput dimension is state_dim, because we have one GP per state dimension
         # So we have lengthscales for each state dimension
@@ -637,7 +636,7 @@ class GPModel(object):
             return carry, outs
 
         carry = [opt_state, params, subkey, 0]
-        carry, outs = jax.lax.scan(train_step, carry, xs=None, length=num_steps)
+        carry, _outs = jax.lax.scan(train_step, carry, xs=None, length=num_steps)
         params = carry[1]
         return params
 
@@ -645,7 +644,7 @@ class GPModel(object):
     def _calculate_calibration_score(predict_fn, params, xs, ys, ps, alpha, output_dim):
         assert alpha.shape == (output_dim,)
 
-        out_mean, out_std, y_mean, y_std = predict_fn(xs, params)
+        _out_mean, _out_std, y_mean, y_std = predict_fn(xs, params)
         cdfs = vmap(norm.cdf)(ys, y_mean, y_std * alpha)
 
         def check_cdf(cdf):

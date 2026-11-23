@@ -1,18 +1,31 @@
 import copy
-
-import jax.random
-
-from opax.agents.actor_critic.sac import SACAgent, SACTrainingState, soft_update
-from gymnasium.spaces import Box
-from opax.utils.replay_buffer import Transition, ReplayBuffer, JaxReplayBuffer, BufferState
-from typing import Callable, Union, Optional, Any
-import jax.numpy as jnp
-from opax.utils.utils import sample_trajectories, get_idx, tree_stack, convert_to_jax
 import functools
-from opax.optimizers.dummy_policy_optimizer import DummyPolicyOptimizer
-from opax.utils.type_aliases import ModelProperties, PolicyProperties
-from opax.models.active_learning_model import ActiveLearningHUCRLModel, ActiveLearningPETSModel
+from collections.abc import Callable
+from typing import Optional
+
 import flax.struct
+import jax.numpy as jnp
+import jax.random
+from gymnasium.spaces import Box
+from opax.agents.actor_critic.sac import SACAgent, SACTrainingState, soft_update
+
+from opax.models.active_learning_model import (
+    ActiveLearningHUCRLModel,
+    ActiveLearningPETSModel,
+)
+from opax.optimizers.dummy_policy_optimizer import DummyPolicyOptimizer
+from opax.utils.replay_buffer import (
+    BufferState,
+    JaxReplayBuffer,
+    Transition,
+)
+from opax.utils.type_aliases import (
+    ModelProperties,
+    PolicyProperties,
+    default_model_properties,
+    default_policy_properties,
+)
+from opax.utils.utils import get_idx, sample_trajectories, tree_stack
 
 EPS = 1e-6
 
@@ -27,9 +40,9 @@ def _simulate_dynamics(horizon: int,
                        evaluate_fn: Callable,
                        dynamics_params=None,
                        key=None,
-                       model_props: ModelProperties = ModelProperties(),
-                       sampling_idx: Optional[Union[jnp.ndarray, int]] = None,
-                       policy_props: PolicyProperties = PolicyProperties(),
+                       model_props: ModelProperties = default_model_properties,
+                       sampling_idx: jnp.ndarray | int | None = None,
+                       policy_props: PolicyProperties = default_policy_properties,
                        ):
     def sample_trajectories_for_state(state: jax.Array, sample_key):
         return sample_trajectories(
@@ -80,7 +93,7 @@ class SACOptimizer(DummyPolicyOptimizer):
                  sim_transitions_ratio: float = 0.0,
                  normalize: bool = False,
                  action_normalize: bool = False,
-                 sac_kwargs: Optional[dict] = None,
+                 sac_kwargs: dict | None = None,
                  reset_actor_params: bool = False,
                  reset_optimizer: bool = True,
                  reset_buffer: bool = True,
@@ -121,8 +134,7 @@ class SACOptimizer(DummyPolicyOptimizer):
         self.dynamics_model_list = dynamics_model_list
         obs_dim = self.dynamics_model.obs_dim
         self.active_exploration_agent = False
-        if isinstance(self.dynamics_model, ActiveLearningPETSModel) or isinstance(
-                self.dynamics_model, ActiveLearningHUCRLModel):
+        if isinstance(self.dynamics_model, (ActiveLearningPETSModel, ActiveLearningHUCRLModel)):
             self.dynamics_model_list.append(dynamics_model_list[0])
             self.active_exploration_agent = True
         dummy_obs_space = Box(low=-1, high=1, shape=(obs_dim,))
@@ -267,8 +279,8 @@ class SACOptimizer(DummyPolicyOptimizer):
                            evaluate: Callable,
                            eval_policy: Callable,
                            dynamics_params: Optional = None,
-                           model_props: ModelProperties = ModelProperties(),
-                           sampling_idx: Optional[Union[jnp.ndarray, int]] = None,
+                           model_props: ModelProperties = default_model_properties,
+                           sampling_idx: jnp.ndarray | int | None = None,
                            ):
 
         eval_rng, rng = jax.random.split(rng, 2)
@@ -399,10 +411,10 @@ class SACOptimizer(DummyPolicyOptimizer):
     def train(self,
               rng: jax.Array,
               true_obs: jax.Array,
-              obs_size: Union[jax.Array, int],
+              obs_size: jax.Array | int,
               dynamics_params: Optional = None,
-              model_props: ModelProperties = ModelProperties(),
-              sampling_idx: Optional[Union[jnp.ndarray, int]] = None,
+              model_props: ModelProperties = default_model_properties,
+              sampling_idx: jnp.ndarray | int | None = None,
               reset_agent: bool = True
               ):
         # simulation_buffers = [JaxReplayBuffer(
