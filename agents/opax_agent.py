@@ -2,8 +2,7 @@ import dataclasses
 import math
 import os
 import time
-from collections.abc import Callable
-from typing import ClassVar, NamedTuple, Any
+from typing import Any, ClassVar, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -11,12 +10,11 @@ import orbax.checkpoint as ocp
 from flax import struct
 from gymnax.environments import environment, spaces
 
-from agents.base import Config, Env, Experience
-from batching import seed_slice, vsplit
+from agents.base import Env, Experience
+from batching import seed_slice
 from config import OpaxConfig
-from logger import ExperimentLogger, log_time
+from logger import log_time
 from opax.models.active_learning_model import ActiveLearningHUCRLModel
-from opax.models.dynamics_model import ModelSummary
 from opax.optimizers.dummy_policy_optimizer import BestSequences
 from opax.optimizers.icem_trajectory_optimizer import ICemTO
 from opax.utils.replay_buffer import Transition as OpaxTransition
@@ -339,14 +337,14 @@ class OpaxAgent:
                 env's updated warm start.
                 """
                 particle_key, optimizer_key = jax.random.split(key_e)
-                plan_kwargs = dict(
-                    dynamics_params=policy.model_params,
-                    obs=obs_e[None],
-                    best_sequences=warm_e,
-                    key=particle_key[None],
-                    optimizer_key=optimizer_key[None],
-                    model_props=policy.model_props,
-                )
+                plan_kwargs = {
+                    "dynamics_params": policy.model_params,
+                    "obs": obs_e[None],
+                    "best_sequences": warm_e,
+                    "key": particle_key[None],
+                    "optimizer_key": optimizer_key[None],
+                    "model_props": policy.model_props,
+                }
                 # Static flag: only one planner is traced into each compiled rollout.
                 # Keyword-only call: optimize is a partial with model_index bound by name.
                 if policy.evaluation:

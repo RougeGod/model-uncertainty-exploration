@@ -13,7 +13,7 @@ import pytest
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 import main
-from config import Args, BLRConfig, ENNConfig, OpaxConfig, PPOConfig, RNDConfig
+from config import Args, BLRConfig, ENNConfig, PPOConfig, RNDConfig
 from offline_data import AREA_INDEX
 from ppo import Transition
 
@@ -199,7 +199,7 @@ def test_online(tmp_path, case):
     args = CASES[case]
     main.main(dataclasses.replace(args, log_dir=str(tmp_path)))
     assert jax.default_backend() == ("gpu" if case in GPU_CASES else "cpu")
-    scalars = _check_outputs(tmp_path, model=not args.model_free)
+    scalars = _check_outputs(tmp_path, model=args.agent=="model-based")
     assert len(scalars) == args.num_seeds
     assert all("eval/mean_return" in tags for tags in scalars.values())
     _check_golden(case, scalars)
