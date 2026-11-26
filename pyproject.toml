@@ -72,6 +72,14 @@ results_symlink = "logs"
 # Assume that compute nodes don't have internet access by default. Override below when they do.
 UV_OFFLINE = "1"
 WANDB_MODE = "offline"
+# copied environment variables from previous run.sbatch file
+MPLBACKEND = "Agg"
+OMP_NUM_THREADS = "1"
+OPENBLAS_NUM_THREADS = "1"
+MKL_NUM_THREADS = "1"
+XLA_FLAGS = "--xla_gpu_deterministic_ops=true --xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1"
+XLA_PYTHON_CLIENT_MEM_FRACTION = "0.9"
+
 
 [tool.cluv.local]
 # Settings (environment variables) applied when using cluv on a local machine (not on a Slurm cluster).
@@ -82,6 +90,17 @@ env = { SCRATCH = "$HOME/scratch" }
 [tool.cluv.sbatch_args]
 # sbatch flags applied on all clusters. CLI-supplied flags take precedence.
 requeue = true
+time = "3:00:00"
+nodes = "1"
+ntasks = "1"
+cpus-per-task = "1"
+mem-per-cpu= "32G"
+gpus = "1" #no need to specify type of GPU, cluster-specific overrides or
+#CLI flags will also take precedence
+output = "/scratch/%u/logs/mue/%x/%j_%a.out"
+error = "/scratch/%u/logs/mue/%x/%j_%a.err"
+
+
 
 ###  --------------   Clusters Config   --------------  ###
 
