@@ -208,3 +208,7 @@ __marimo__/
 
 results/
 runs/
+*.DS_Store
+
+#CLUV by default creates a logs symlink when configured
+logs
